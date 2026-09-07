@@ -31,7 +31,7 @@ export const EvidenceWaterfall: React.FC<EvidenceWaterfallProps> = ({
   return (
     <div className="space-y-6">
       {/* --- VISUAL STACKED WATERFALL BAR CHART --- */}
-      <div className="bg-netra-surface border border-netra-border rounded-xl p-5 shadow-lg space-y-4">
+      <div className="bg-netra-surface border border-netra-border rounded-xl p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-netra-muted uppercase tracking-wider flex items-center space-x-2">
             <Info className="w-4 h-4 text-netra-purple" />
@@ -94,7 +94,7 @@ export const EvidenceWaterfall: React.FC<EvidenceWaterfallProps> = ({
             return (
               <div
                 key={item.evidence_id}
-                className="bg-netra-surface border border-netra-border hover:border-netra-purple/50 rounded-lg overflow-hidden transition shadow-sm"
+                className="bg-netra-surface border border-netra-border hover:border-netra-purple/50 rounded-lg overflow-hidden transition"
               >
                 <div
                   onClick={() => toggleExpand(item.evidence_id)}
@@ -222,8 +222,8 @@ export const EvidenceWaterfall: React.FC<EvidenceWaterfallProps> = ({
 
       {/* --- DRILL-DOWN PROVENANCE MODAL --- */}
       {selectedModalItem && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-netra-surface border border-netra-purple/50 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-netra-surface border border-netra-purple/50 rounded-2xl max-w-lg w-full p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-netra-border pb-3">
               <h3 className="text-sm font-bold text-white flex items-center space-x-2">
                 <ShieldCheck className="w-4 h-4 text-netra-purple" />

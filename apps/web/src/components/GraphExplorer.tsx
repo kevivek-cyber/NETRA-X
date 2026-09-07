@@ -522,16 +522,21 @@ export const GraphExplorer: React.FC<GraphExplorerProps> = ({ actorId, onNavigat
     <div className="space-y-4 font-sans">
       {/* Header Toolbar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-netra-border pb-3 gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-white flex items-center space-x-2">
-            <ListTree className="w-5 h-5 text-netra-cyan" />
-            <span>Interactive Intelligence Knowledge Graph</span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-netra-purple/20 text-netra-purple border border-netra-purple/40">
-              CYTOSCAPE.JS TOPOLOGY
-            </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <ListTree className="w-3.5 h-3.5 text-netra-purple shrink-0" />
+            <span className="telemetry-label bracketed">Module 05</span>
+          </div>
+          <h1
+            data-text="Intelligence Graph"
+            className="glitch-soft font-display uppercase text-netra-text leading-[0.9] tracking-tightest"
+            style={{ fontSize: "clamp(1.75rem, 3.6vw, 2.75rem)" }}
+          >
+            Intelligence Graph
           </h1>
-          <p className="text-xs text-netra-muted mt-0.5">
-            Multi-Modal Threat Actor Entity Graph • Real-Time Heuristic Node Filtering & Physics Layouts
+          <p className="mt-2 text-xs text-netra-muted max-w-xl leading-relaxed">
+            Multi-modal threat actor entity graph. Heuristic node filtering and
+            physics layouts over the projected topology.
           </p>
         </div>
 

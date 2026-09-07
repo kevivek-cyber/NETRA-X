@@ -59,9 +59,24 @@ export default function Home() {
   };
 
   if (loading) {
+    // First paint, before the session check resolves. This is the very first
+    // thing drawn on a cold start, so it uses the same console language as
+    // everything after it rather than a centred pulsing sentence.
     return (
-      <div className="min-h-screen bg-netra-bg flex items-center justify-center font-mono text-xs text-netra-purple animate-pulse">
-        Initializing NETRA-X Intelligence Interface...
+      <div className="min-h-screen bg-netra-bg flex items-center justify-center p-6">
+        <div className="absolute inset-0 blueprint-bg pointer-events-none" aria-hidden="true" />
+        <div className="relative border border-netra-border bg-netra-card px-6 py-5 min-w-[300px]">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-1.5 h-1.5 bg-netra-purple live-dot" />
+            <span className="telemetry-label text-netra-text">Initializing</span>
+          </div>
+          <p className="font-mono text-[11px] text-netra-muted">
+            Resolving operator session
+            <span className="caret-blink">_</span>
+          </p>
+          <div className="mt-4 h-px w-full bg-netra-border" />
+          <p className="mt-3 telemetry-label">NETRA-X / Tactical Telemetry</p>
+        </div>
       </div>
     );
   }

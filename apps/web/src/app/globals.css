@@ -392,3 +392,147 @@ body::before {
 .thin-scroll::-webkit-scrollbar-track { background: transparent; border: 0; }
 .thin-scroll::-webkit-scrollbar-thumb { background: #2E2E2E; }
 .thin-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ==========================================================================
+   CONSOLE PRIMITIVES
+   Motion supporting the operator chrome: the boot terminal, the telemetry
+   ticker, the sparkline reveal and the perimeter framing. Everything here is
+   covered by the prefers-reduced-motion block at the top of the sheet.
+   ========================================================================== */
+
+/* --- TERMINAL CARET ----------------------------------------------------
+   Communicates: the console is awaiting input / still writing. A hard step
+   blink, not a fade -- a cursor that eases is a cursor from a marketing site. */
+@keyframes caret-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.caret-blink { animation: caret-blink 1s steps(1) infinite; }
+
+/* --- SPARKLINE REVEAL --------------------------------------------------
+   Communicates: this series just loaded. The path writes itself once, left to
+   right, then holds. */
+@keyframes spark-draw { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+.spark-draw {
+  stroke-dasharray: 1000;
+  animation: spark-draw 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* --- TELEMETRY TICKER --------------------------------------------------
+   Communicates: the platform is live between analyst actions. Sanctioned
+   perpetual motion -- it is a status readout, and it carries real figures.
+   Translating a duplicated strip by exactly -50% loops with no visible seam. */
+@keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.ticker-viewport { overflow: hidden; width: 100%; }
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll linear infinite;
+}
+.ticker-viewport:hover .ticker-track { animation-play-state: paused; }
+.ticker-strip { display: flex; flex-shrink: 0; }
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 22px;
+  white-space: nowrap;
+}
+
+/* --- BLUEPRINT BACKDROP ------------------------------------------------
+   A measured grid behind the auth screen and the globe. Static: it is
+   structure, not an event, so it does not move. The mask fades it out toward
+   the edges so it never competes with foreground type. */
+.blueprint-bg {
+  background-image:
+    linear-gradient(rgba(53, 194, 232, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 194, 232, 0.055) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 20%, transparent 78%);
+  mask-image: radial-gradient(ellipse at center, #000 20%, transparent 78%);
+}
+
+/* --- RADAR SWEEP -------------------------------------------------------
+   Communicates: an active scan. Used once, behind the auth panel, at low
+   opacity. A conic gradient rotated in place costs one composited transform. */
+@keyframes radar-spin { to { transform: rotate(360deg); } }
+.radar-sweep {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 300deg,
+    rgba(53, 194, 232, 0.16) 350deg,
+    rgba(53, 194, 232, 0.30) 360deg
+  );
+  border-radius: 50%;
+  animation: radar-spin 6s linear infinite;
+}
+
+/* --- PERIMETER TICKS ---------------------------------------------------
+   Registration marks along a panel edge. Structural syntax, per §6 -- the
+   marks read as a measuring rule rather than decoration. */
+.edge-ticks {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--rule) 0px, var(--rule) 1px,
+    transparent 1px, transparent 9px
+  );
+}
+
+/* --- AUTH PANEL ENTRY --------------------------------------------------
+   Communicates: the terminal coming up. Wider clip than .boot-in and a beat
+   slower, because this is the first thing drawn on a cold start. */
+@keyframes console-boot {
+  0%   { opacity: 0; clip-path: inset(48% 0 48% 0); }
+  55%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  100% { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+.console-boot { animation: console-boot 560ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* --- SIGNAL SCAN -------------------------------------------------------
+   A single bright line crossing a panel once when its data lands. Distinct
+   from the page-level CRT sweep: that one is ambient, this one is an event. */
+@keyframes signal-scan { 0% { left: -30%; } 100% { left: 130%; } }
+.signal-scan::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 28%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(53, 194, 232, 0.10), transparent);
+  animation: signal-scan 1.5s ease-out both;
+}
+
+/* --- COUNTER TICK ------------------------------------------------------
+   Communicates: a figure changed. One quick lift so a value that updates
+   while the analyst is looking elsewhere is still noticed on return. */
+@keyframes counter-tick {
+  0%   { transform: translateY(0); }
+  40%  { transform: translateY(-3px); }
+  100% { transform: translateY(0); }
+}
+.counter-tick { animation: counter-tick 260ms ease-out; }
+
+/* --- THREAT LEVEL BAR --------------------------------------------------
+   Segmented meter. Segments fill in sequence on mount so the level reads as
+   being measured rather than asserted. */
+@keyframes seg-fill { from { opacity: 0; transform: scaleY(0.3); } to { opacity: 1; transform: scaleY(1); } }
+.seg { transform-origin: bottom; animation: seg-fill 260ms ease-out both; }
+.seg:nth-child(1) { animation-delay: 40ms; }
+.seg:nth-child(2) { animation-delay: 90ms; }
+.seg:nth-child(3) { animation-delay: 140ms; }
+.seg:nth-child(4) { animation-delay: 190ms; }
+.seg:nth-child(5) { animation-delay: 240ms; }
+
+/* Nav item active marker: a hard 2px rule that slides rather than a pill that
+   fades. Mechanical selection, consistent with the 90-degree rule. */
+.nav-item { position: relative; }
+.nav-item::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nav-item[data-active="true"]::before { transform: scaleY(1); }
+.nav-item:hover::before { transform: scaleY(0.45); }

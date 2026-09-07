@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Lock, ShieldCheck, Hash, AlertTriangle } from "lucide-react";
+import { ModuleHeader } from "./ModuleHeader";
 import { apiFetch } from "../lib/api";
 
 export const AuditLogViewer: React.FC = () => {
@@ -24,17 +25,12 @@ export const AuditLogViewer: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center border-b border-netra-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide flex items-center space-x-2">
-            <Lock className="w-6 h-6 text-netra-purple" />
-            <span>Cryptographic SHA-256 Audit Log Chain</span>
-          </h1>
-          <p className="text-xs text-netra-muted mt-0.5">
-            Tamper-Evident Immutable Provenance Ledger for Platform Actions
-          </p>
-        </div>
-      </div>
+      <ModuleHeader
+        code="07"
+        icon={Lock}
+        title="Audit Chain"
+        brief="Tamper-evident append-only provenance ledger. Every platform action is hash-chained to its predecessor."
+      />
 
       {/* Verification Status Banner */}
       {auditData && (

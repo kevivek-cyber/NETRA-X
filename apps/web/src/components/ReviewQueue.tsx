@@ -1,7 +1,22 @@
 "use client";
 
+/**
+ * Hypothesis review queue.
+ *
+ * Rebuilt as a dense instrument list rather than a stack of rounded cards with
+ * tinted pill badges. Each row is a compartment: identity pair on the left, the
+ * two figures that decide the call in the middle, the decision controls on the
+ * right, and a probability meter running along the bottom edge.
+ *
+ * The probability bar is the one piece of chrome that earns an entry
+ * animation -- it is the value the analyst is being asked to rule on, so it
+ * fills from zero rather than appearing already drawn.
+ */
+
 import React, { useState } from "react";
-import { ShieldCheck, AlertOctagon, CheckCircle2, XCircle, Clock, Filter, ArrowUpRight } from "lucide-react";
+import {
+  AlertOctagon, ArrowUpRight, CheckCircle2, Clock, Filter, XCircle,
+} from "lucide-react";
 
 interface HypothesisItem {
   id: string;
@@ -22,150 +37,210 @@ interface ReviewQueueProps {
   onReviewDecision: (id: string, decision: string) => void;
 }
 
+const FILTERS = ["ALL", "PROPOSED", "ACCEPTED", "REJECTED", "INSUFFICIENT"];
+
+/** Status drives border and text colour only -- no filled pills. */
+function statusTone(status: string) {
+  switch (status.toUpperCase()) {
+    case "ACCEPTED":
+      return "text-netra-valid border-netra-valid";
+    case "REJECTED":
+      return "text-netra-red border-netra-red";
+    case "INSUFFICIENT":
+      return "text-netra-muted border-netra-border";
+    default:
+      return "text-netra-amber border-netra-amber";
+  }
+}
+
 export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   hypotheses,
   onSelectHypothesis,
-  onReviewDecision
+  onReviewDecision,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-  const filteredHypotheses = hypotheses.filter((h) => {
-    if (statusFilter === "ALL") return true;
-    return h.status.toUpperCase() === statusFilter.toUpperCase();
-  }).sort((a, b) => b.calibrated_prob - a.calibrated_prob);
+  const filtered = hypotheses
+    .filter((h) =>
+      statusFilter === "ALL" ? true : h.status.toUpperCase() === statusFilter
+    )
+    .sort((a, b) => b.calibrated_prob - a.calibrated_prob);
+
+  const pendingCount = hypotheses.filter(
+    (h) => h.status.toUpperCase() === "PROPOSED"
+  ).length;
 
   return (
-    <div className="space-y-4">
-      {/* Header & Filter Controls */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-netra-surface border border-netra-border p-4 rounded-xl">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-netra-purple/20 text-netra-purple rounded-lg border border-netra-purple/40">
-            <Filter className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Hypothesis Review Queue</h2>
-            <p className="text-xs text-netra-subtle">Prioritized by isotonic calibrated posterior probability</p>
-          </div>
+    <section className="border border-netra-border bg-netra-card">
+      {/* Header */}
+      <header className="border-b border-netra-border">
+        <div className="flex items-center gap-2.5 px-4 h-11">
+          <Filter className="w-3.5 h-3.5 text-netra-purple shrink-0" />
+          <h2 className="telemetry-label text-netra-text">Hypothesis Review Queue</h2>
+          <span className="ml-auto font-mono text-[10px] text-netra-muted tabular-nums">
+            {filtered.length}/{hypotheses.length}
+            {pendingCount > 0 && (
+              <span className="text-netra-amber ml-2">{pendingCount} PENDING</span>
+            )}
+          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
-          {["ALL", "PROPOSED", "ACCEPTED", "REJECTED", "INSUFFICIENT"].map((st) => (
+        {/* Segmented filter -- one continuous control, hairline separated. */}
+        <div className="flex flex-wrap gap-px bg-netra-border border-t border-netra-border">
+          {FILTERS.map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition ${
+              aria-pressed={statusFilter === st}
+              className={`flex-1 min-w-[84px] h-8 font-mono text-[10px] tracking-telemetry transition-colors ${
                 statusFilter === st
-                  ? "bg-netra-purple text-netra-bg border-netra-purple shadow-lg shadow-netra-purple/30"
-                  : "bg-netra-bg text-netra-muted border-netra-border hover:border-netra-purple/40"
+                  ? "bg-netra-purple text-netra-bg font-bold"
+                  : "bg-netra-surface text-netra-muted hover:text-netra-text"
               }`}
             >
               {st}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
-      {/* Hypothesis Cards. `stagger` sequences the children so results land
-          one after another rather than as a single block. */}
-      <div className="space-y-3 stagger">
-        {filteredHypotheses.length === 0 ? (
-          <div className="p-8 text-center bg-netra-surface border border-netra-border rounded-xl text-netra-subtle font-mono text-xs">
-            No hypotheses matching status filter '{statusFilter}'.
-          </div>
-        ) : (
-          filteredHypotheses.map((h) => {
-            const hasContradiction = (h.contradictions && h.contradictions.length > 0) || h.raw_log_lr < 0;
-            const familyCount = h.family_breakdown ? Object.keys(h.family_breakdown).length : (h.supporting_evidence ? h.supporting_evidence.length : 1);
-            const probPct = (h.calibrated_prob * 100).toFixed(1);
+      {/* Rows */}
+      {filtered.length === 0 ? (
+        <p className="p-10 text-center font-mono text-[11px] text-netra-subtle">
+          No hypotheses with status <span className="text-netra-text">{statusFilter}</span>.
+        </p>
+      ) : (
+        <ul className="divide-y divide-netra-border stagger">
+          {filtered.map((h) => {
+            const hasContradiction =
+              (h.contradictions?.length ?? 0) > 0 || h.raw_log_lr < 0;
+            const familyCount = h.family_breakdown
+              ? Object.keys(h.family_breakdown).length
+              : h.supporting_evidence?.length ?? 0;
+            const pct = h.calibrated_prob * 100;
+            const decided = h.status.toUpperCase() !== "PROPOSED";
 
             return (
-              <div
-                key={h.id}
-                className="bg-netra-surface border border-netra-border rounded-xl p-5 shadow-lg space-y-4 row-live"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-netra-border/50 pb-3">
-                  <div className="flex items-center space-x-3">
-                    <span className="text-lg font-black text-white">{h.subject_label}</span>
-                    <span className="text-netra-purple font-mono font-bold">↔</span>
-                    <span className="text-lg font-black text-netra-cyan">{h.object_label}</span>
-                  </div>
-
-                  <div className="flex items-center space-x-2 font-mono text-xs">
-                    <span className="bg-netra-purple/20 text-netra-purple px-2.5 py-1 rounded-md border border-netra-purple/30 font-bold">
-                      {familyCount} Independent Families
-                    </span>
-                    {hasContradiction && (
-                      <span className="bg-netra-red/20 text-netra-red px-2.5 py-1 rounded-md border border-netra-red/40 font-bold flex items-center space-x-1">
-                        <AlertOctagon className="w-3.5 h-3.5" />
-                        <span className="contradiction-alert">Contradiction Flagged</span>
+              <li key={h.id} className="relative row-live border-l-2 border-l-transparent hover:border-l-netra-purple bg-netra-card">
+                <div className="p-4 space-y-3">
+                  {/* Identity pair */}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="flex items-center gap-2.5 min-w-0">
+                      <span className="font-display uppercase text-base text-netra-text truncate">
+                        {h.subject_label}
                       </span>
-                    )}
-                    <span className={`px-2.5 py-1 rounded-md border font-bold ${
-                      h.status === "ACCEPTED" ? "bg-netra-valid/15 text-netra-valid border-netra-valid/40" :
-                      h.status === "REJECTED" ? "bg-netra-red/20 text-netra-red border-netra-red/40" :
-                      "bg-netra-amber/20 text-netra-amber border-netra-amber/40"
-                    }`}>
-                      {h.status}
-                    </span>
-                  </div>
-                </div>
+                      <span className="font-mono text-netra-purple shrink-0">&lt;-&gt;</span>
+                      <span className="font-display uppercase text-base text-netra-purple truncate">
+                        {h.object_label}
+                      </span>
+                    </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
-                  <div className="bg-netra-bg p-3 rounded-lg border border-netra-border">
-                    <span className="text-netra-subtle block">Calibrated Probability P(H1|E):</span>
-                    <span className="text-xl font-bold text-netra-valid">{probPct}%</span>
-                    <span className="text-netra-muted text-[11px] block mt-0.5">{h.confidence_tier}</span>
+                    <div className="flex items-center gap-2 font-mono text-[9px] tracking-telemetry uppercase shrink-0">
+                      {hasContradiction && (
+                        <span className="flex items-center gap-1 border border-netra-red text-netra-red px-2 h-6">
+                          <AlertOctagon className="w-3 h-3 contradiction-alert" />
+                          <span className="font-bold">Contradiction</span>
+                        </span>
+                      )}
+                      <span className={`border px-2 h-6 flex items-center font-bold ${statusTone(h.status)}`}>
+                        {h.status}
+                      </span>
+                    </div>
                   </div>
-                  <div className="bg-netra-bg p-3 rounded-lg border border-netra-border">
-                    <span className="text-netra-subtle block">Raw Log-Likelihood Ratio:</span>
-                    <span className={`text-xl font-bold ${h.raw_log_lr >= 0 ? "text-netra-purple" : "text-netra-red"}`}>
-                      {h.raw_log_lr >= 0 ? `+${h.raw_log_lr.toFixed(2)}` : h.raw_log_lr.toFixed(2)} LLR
-                    </span>
-                  </div>
-                  <div className="bg-netra-bg p-3 rounded-lg border border-netra-border flex flex-col justify-between">
-                    <span className="text-netra-subtle block">Actions:</span>
-                    <div className="flex items-center space-x-2 pt-1">
-                      <button
-                        onClick={() => onSelectHypothesis(h.id)}
-                        className="flex-1 py-1.5 bg-netra-purple hover:bg-netra-purple/80 text-netra-bg font-bold rounded text-xs transition flex items-center justify-center space-x-1"
+
+                  {/* Figures */}
+                  <dl className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-netra-border border border-netra-border">
+                    <div className="bg-netra-surface p-2.5">
+                      <dt className="telemetry-label">P(H1|E)</dt>
+                      <dd className="font-mono text-lg text-netra-valid tabular-nums leading-tight">
+                        {pct.toFixed(1)}%
+                      </dd>
+                    </div>
+                    <div className="bg-netra-surface p-2.5">
+                      <dt className="telemetry-label">Raw LLR</dt>
+                      <dd
+                        className={`font-mono text-lg tabular-nums leading-tight ${
+                          h.raw_log_lr >= 0 ? "text-netra-purple" : "text-netra-red"
+                        }`}
                       >
-                        <span>Waterfall Detail</span>
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </button>
+                        {h.raw_log_lr >= 0 ? "+" : ""}
+                        {h.raw_log_lr.toFixed(2)}
+                      </dd>
+                    </div>
+                    <div className="bg-netra-surface p-2.5">
+                      <dt className="telemetry-label">Tier</dt>
+                      <dd className="font-mono text-[11px] text-netra-text leading-tight pt-1.5">
+                        {h.confidence_tier}
+                      </dd>
+                    </div>
+                    <div className="bg-netra-surface p-2.5">
+                      <dt className="telemetry-label">Families</dt>
+                      <dd className="font-mono text-lg text-netra-text tabular-nums leading-tight">
+                        {familyCount}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {/* Probability meter. Fills once on mount. */}
+                  <div className="h-1 bg-netra-surface border border-netra-border" role="presentation">
+                    <div
+                      className="h-full bar-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, pct))}%`,
+                        background: hasContradiction ? "#E61919" : "#35C2E8",
+                      }}
+                    />
+                  </div>
+
+                  {/* Controls */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      onClick={() => onSelectHypothesis(h.id)}
+                      className="h-7 px-3 border border-netra-border bg-netra-surface text-netra-text font-mono text-[10px] uppercase tracking-telemetry flex items-center gap-1.5 hover:border-netra-purple hover:text-netra-purple transition-colors"
+                    >
+                      <span>Waterfall</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </button>
+
+                    <div className="ml-auto flex items-center gap-2">
+                      {decided ? (
+                        <span className="font-mono text-[10px] text-netra-subtle uppercase tracking-telemetry">
+                          Reviewed
+                        </span>
+                      ) : (
+                        <>
+                          <span className="telemetry-label hidden sm:inline">Analyst decision</span>
+                          <button
+                            onClick={() => onReviewDecision(h.id, "ACCEPT")}
+                            className="h-7 px-2.5 border border-netra-valid text-netra-valid font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center gap-1 hover:bg-netra-valid hover:text-netra-bg transition-colors"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => onReviewDecision(h.id, "REJECT")}
+                            className="h-7 px-2.5 border border-netra-red text-netra-red font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center gap-1 hover:bg-netra-red hover:text-netra-bg transition-colors"
+                          >
+                            <XCircle className="w-3 h-3" />
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => onReviewDecision(h.id, "INSUFFICIENT")}
+                            className="h-7 px-2.5 border border-netra-amber text-netra-amber font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center gap-1 hover:bg-netra-amber hover:text-netra-bg transition-colors"
+                          >
+                            <Clock className="w-3 h-3" />
+                            Insufficient
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
-
-                {/* Inline Review Decision Buttons */}
-                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-netra-border/50 text-xs font-mono">
-                  <span className="text-netra-subtle mr-2">Submit Analyst Review:</span>
-                  <button
-                    onClick={() => onReviewDecision(h.id, "ACCEPT")}
-                    className="px-3 py-1 bg-netra-valid/15 hover:bg-netra-valid/25 text-netra-valid border border-netra-valid/40 rounded font-bold transition flex items-center space-x-1"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>ACCEPT</span>
-                  </button>
-                  <button
-                    onClick={() => onReviewDecision(h.id, "REJECT")}
-                    className="px-3 py-1 bg-netra-red/20 hover:bg-netra-red/30 text-netra-red border border-netra-red/40 rounded font-bold transition flex items-center space-x-1"
-                  >
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>REJECT</span>
-                  </button>
-                  <button
-                    onClick={() => onReviewDecision(h.id, "INSUFFICIENT")}
-                    className="px-3 py-1 bg-netra-amber/20 hover:bg-netra-amber/30 text-netra-amber border border-netra-amber/40 rounded font-bold transition flex items-center space-x-1"
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>INSUFFICIENT</span>
-                  </button>
-                </div>
-              </div>
+              </li>
             );
-          })
-        )}
-      </div>
-    </div>
+          })}
+        </ul>
+      )}
+    </section>
   );
 };

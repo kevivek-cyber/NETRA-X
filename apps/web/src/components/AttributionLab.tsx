@@ -108,13 +108,21 @@ export const AttributionLab: React.FC<AttributionLabProps> = ({
 
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-netra-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide flex items-center space-x-2">
-            <GitMerge className="w-6 h-6 text-netra-purple" />
-            <span>Bayesian Attribution Intelligence Lab</span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <GitMerge className="w-3.5 h-3.5 text-netra-purple shrink-0" />
+            <span className="telemetry-label bracketed">Module 04</span>
+          </div>
+          <h1
+            data-text="Attribution Lab"
+            className="glitch-soft font-display uppercase text-netra-text leading-[0.9] tracking-tightest"
+            style={{ fontSize: "clamp(1.75rem, 3.6vw, 2.75rem)" }}
+          >
+            Attribution Lab
           </h1>
-          <p className="text-xs text-netra-muted mt-0.5">
-            Log-Likelihood Ratio Fusion, Dependence Discounting (λ = {lambdaDisplay}) & Isotonic Calibration
+          <p className="mt-2 text-xs text-netra-muted max-w-xl leading-relaxed">
+            Log-likelihood ratio fusion, dependence discounting (λ = {lambdaDisplay})
+            and isotonic calibration.
           </p>
         </div>
 
@@ -137,7 +145,7 @@ export const AttributionLab: React.FC<AttributionLabProps> = ({
           <button
             onClick={handlePdfExport}
             disabled={exporting}
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-netra-purple text-netra-bg hover:bg-netra-purple/80 font-medium text-xs shadow-lg transition disabled:opacity-50"
+            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-netra-purple text-netra-bg hover:bg-netra-purple/80 font-medium text-xs transition disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
             <span>{exporting ? "Generating..." : "Export Signed PDF"}</span>
