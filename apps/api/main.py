@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import Session, joinedload
 
 from packages.evidence.uuid7 import uuidv7_str
@@ -1219,47 +1219,104 @@ def archive_case(id: str, db: Session = Depends(get_db), current_user: User = De
 # --- SEARCH ---
 @app.get("/api/v1/search", response_model=SearchResponse)
 def search_entities(q: str = Query(..., min_length=2), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Search the ledger for anything matching `q`.
+
+    This covered actors by primary alias, PGP keys and wallet addresses, and
+    nothing else -- so searching a shared handle like "nightowl99" returned no
+    results at all, and neither did a cluster id. Those are exactly the
+    identifiers the product exists to surface: one operator reusing a handle
+    across differently-named personas is the finding, and it was unfindable
+    from the search bar.
+
+    Aliases, account handles, wallet clusters and onion services are included,
+    and an identifier held by more than one actor says so in its snippet.
+    """
     results = []
     term = f"%{q}%"
 
-    # Search Actors
-    actors = db.query(Actor).filter(or_(Actor.primary_alias.ilike(term), Actor.category.ilike(term))).all()
-    for a in actors:
+    def digest(x: str) -> str:
+        return hashlib.sha256(x.encode()).hexdigest()
+
+    # Actors
+    for a in db.query(Actor).filter(
+            or_(Actor.primary_alias.ilike(term), Actor.category.ilike(term))).all():
         results.append(SearchResultItem(
-            entity_id=a.id,
-            entity_type="Actor",
+            entity_id=a.id, entity_type="Actor",
             title=f"Actor: {a.primary_alias}",
             snippet=f"Category: {a.category} | Confidence: {a.confidence * 100:.0f}%",
-            source_uri="database://actors",
-            confidence=a.confidence,
-            provenance_hash=hashlib.sha256(a.id.encode()).hexdigest()
-        ))
+            source_uri="database://actors", confidence=a.confidence,
+            provenance_hash=digest(a.id)))
 
-    # Search PGP Keys
-    keys = db.query(PGPKey).filter(or_(PGPKey.fingerprint.ilike(term), PGPKey.key_id.ilike(term))).all()
-    for k in keys:
+    # Aliases -- the reuse the product is built to find.
+    for al in db.query(Alias).filter(Alias.value.ilike(term)).all():
+        owners = db.query(Alias).filter(func.lower(Alias.value) == al.value.lower()).all()
+        actor_ids = {o.actor_id for o in owners}
+        owner = db.query(Actor).filter_by(id=al.actor_id).first()
+        shared = len(actor_ids) > 1
+        names = []
+        if shared:
+            names = [x.primary_alias for x in
+                     db.query(Actor).filter(Actor.id.in_(actor_ids)).all()]
         results.append(SearchResultItem(
-            entity_id=k.id,
-            entity_type="PGPKey",
+            entity_id=al.actor_id, entity_type="Alias",
+            title=f"Handle: {al.value}",
+            snippet=(f"SHARED by {len(actor_ids)} actors: {', '.join(names)}" if shared
+                     else f"Used by {owner.primary_alias if owner else 'unknown'}"
+                          f" on {al.platform or 'unknown platform'}"),
+            source_uri="database://aliases", confidence=al.confidence,
+            provenance_hash=digest(al.id)))
+
+    # Account handles
+    for ac in db.query(Account).filter(
+            or_(Account.handle.ilike(term), Account.platform.ilike(term))).all():
+        owner = db.query(Actor).filter_by(id=ac.actor_id).first()
+        results.append(SearchResultItem(
+            entity_id=ac.id, entity_type="Account",
+            title=f"Account: {ac.handle}",
+            snippet=f"{ac.platform} | {owner.primary_alias if owner else 'unattributed'}",
+            source_uri="database://accounts", confidence=0.85,
+            provenance_hash=digest(ac.id)))
+
+    # PGP keys
+    for k in db.query(PGPKey).filter(
+            or_(PGPKey.fingerprint.ilike(term), PGPKey.key_id.ilike(term))).all():
+        results.append(SearchResultItem(
+            entity_id=k.id, entity_type="PGPKey",
             title=f"PGP Key ID: {k.key_id}",
             snippet=f"Fingerprint: {k.fingerprint}",
-            source_uri="database://pgp_keys",
-            confidence=0.99,
-            provenance_hash=hashlib.sha256(k.id.encode()).hexdigest()
-        ))
+            source_uri="database://pgp_keys", confidence=0.99,
+            provenance_hash=digest(k.id)))
 
-    # Search Wallets
-    wallets = db.query(Wallet).filter(Wallet.address.ilike(term)).all()
-    for w in wallets:
+    # Wallets, by address or by cluster
+    for w in db.query(Wallet).filter(
+            or_(Wallet.address.ilike(term), Wallet.cluster_id.ilike(term),
+                Wallet.chain.ilike(term))).all():
+        co = []
+        if w.cluster_id:
+            sibs = db.query(Wallet).filter(
+                Wallet.cluster_id == w.cluster_id, Wallet.actor_id != w.actor_id).all()
+            co = [x.primary_alias for x in db.query(Actor).filter(
+                Actor.id.in_({s_.actor_id for s_ in sibs})).all()]
+        owner = db.query(Actor).filter_by(id=w.actor_id).first()
         results.append(SearchResultItem(
-            entity_id=w.id,
-            entity_type="Wallet",
+            entity_id=w.id, entity_type="Wallet",
             title=f"Wallet ({w.chain}): {w.address}",
-            snippet=f"Cluster: {w.cluster_id or 'Unclustered'}",
-            source_uri="database://wallets",
-            confidence=0.90,
-            provenance_hash=hashlib.sha256(w.id.encode()).hexdigest()
-        ))
+            snippet=(f"Cluster {w.cluster_id} | held by "
+                     f"{owner.primary_alias if owner else 'unattributed'}"
+                     + (f" | CO-SPENDS with {', '.join(co)}" if co else "")),
+            source_uri="database://wallets", confidence=0.90,
+            provenance_hash=digest(w.id)))
+
+    # Onion services
+    for o in db.query(OnionService).filter(
+            or_(OnionService.onion_address.ilike(term),
+                OnionService.title.ilike(term))).all():
+        results.append(SearchResultItem(
+            entity_id=o.id, entity_type="OnionService",
+            title=f"Onion: {o.onion_address}",
+            snippet=f"{o.title or 'untitled'} | favicon mmh3 {o.favicon_mmh3}",
+            source_uri="database://onion_services", confidence=0.88,
+            provenance_hash=digest(o.id)))
 
     return SearchResponse(query=q, total_matches=len(results), results=results)
 
