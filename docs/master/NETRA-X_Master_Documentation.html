@@ -1,0 +1,2239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NETRA-X — Technical Master Documentation</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ==================================================== COVER -->
+<section class="cover">
+  <div class="eyebrow">Technical Master Documentation</div>
+  <h1>NETRA&#8209;X</h1>
+  <div class="sub">Evidence-Grounded Attribution for Dark-Web Threat Actors</div>
+  <div class="rule"></div>
+  <div class="sub" style="font-size:11pt;color:#a8cddb;max-width:120mm">
+    From first principles through mathematics, machine learning, code and
+    production hardening — with every claim traced to the repository.
+  </div>
+
+  <div class="warnbox">
+    <b>This document describes the implementation as it exists, not as it was designed.</b>
+    Every technical claim was verified against the working tree before being
+    written. Where documentation, docstrings or slide material disagree with the
+    code, the disagreement is recorded explicitly rather than smoothed over.
+    Components that are heuristic are labelled heuristic; models that were never
+    trained are labelled untrained.
+  </div>
+
+  <div class="meta">
+    <b>Problem statement</b> &nbsp; SIH26151 &nbsp;·&nbsp; Smart India Hackathon 2026 &nbsp;·&nbsp; NTRO<br>
+    <b>Repository</b> &nbsp; github.com/me13krishna/NETRA-X<br>
+    <b>Scale</b> &nbsp; 12,073 LOC Python &nbsp;·&nbsp; 4,868 LOC TypeScript &nbsp;·&nbsp; 38 REST endpoints &nbsp;·&nbsp; 19 tables &nbsp;·&nbsp; 115 tests<br>
+    <b>Verified against</b> &nbsp; commit 58c2f99 &nbsp;·&nbsp; 1 September 2026
+  </div>
+</section>
+
+<!-- ==================================================== TOC -->
+<section class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><span class="vt">Volume 1 &nbsp;—&nbsp; Foundations: The Problem Before The Code</span>
+        <span class="vd">Tor and hidden services · why anonymity survives · what still leaks · identifiers, OSINT, attribution and entity resolution · the exact problem NETRA-X solves · the twelve-stage pipeline</span></li>
+    <li><span class="vt">Volume 2 &nbsp;—&nbsp; Architecture &amp; Codebase</span>
+        <span class="vd">Simple and technical architecture views · repository map · module responsibilities · request tracing · the data model · 19 tables and why each exists</span></li>
+    <li><span class="vt">Volume 3 &nbsp;—&nbsp; Mathematics: Bayes, Likelihood Ratios and Fusion</span>
+        <span class="vd">Probability from first principles · Bayes' theorem · likelihood ratios · why logarithms · dependence discounting · family caps · contradictions · calibration · thresholds</span></li>
+    <li><span class="vt">Volume 4 &nbsp;—&nbsp; Machine Learning: An Honest Accounting</span>
+        <span class="vd">What is learned and what is not · the m/u prior table · stylometry · the untrained neural encoder · Node2Vec · calibration · the benchmark and its limits</span></li>
+    <li><span class="vt">Volume 5 &nbsp;—&nbsp; Similarity, Graph &amp; Attribution Mechanics</span>
+        <span class="vd">Cosine similarity · Burrows's Delta · Jaccard neighbour overlap · SimHash · MurmurHash3 favicon pivots · UTXO clustering · candidate generation</span></li>
+    <li><span class="vt">Volume 6 &nbsp;—&nbsp; Technology Decisions and "Why Not X?"</span>
+        <span class="vd">Full stack table · every major choice justified · alternatives considered · trade-offs accepted · three alternative architectures compared</span></li>
+    <li><span class="vt">Volume 7 &nbsp;—&nbsp; Security, Testing, Limitations &amp; Production</span>
+        <span class="vd">Auth and the audit chain · what security exists and what does not · test inventory · brutally honest limitations · MVP-to-production gap analysis</span></li>
+    <li><span class="vt">Volume 8 &nbsp;—&nbsp; Reference: Truth Table, Formulas, Glossary, Viva Bank</span>
+        <span class="vd">Implementation truth table · source-of-truth file map · complete formula sheet · glossary · 100+ viva questions with answers · rapid revision</span></li>
+  </ol>
+</section>
+
+<!-- ==================================================== VOLUME 1 -->
+<h1 class="vol"><span class="vnum">Volume One</span>Foundations: The Problem Before The Code</h1>
+<div class="volrule"></div>
+
+<p class="lead">
+This volume assumes no prior knowledge. It explains what the dark web is, why
+anonymity is hard to break, what nevertheless leaks, and why those leaks make
+attribution possible at all. Only once that is clear does NETRA-X make sense —
+because NETRA-X is not a tool that breaks Tor. It is a tool that reasons
+carefully about mistakes people already made.
+</p>
+
+<h2>1.1 The Dark Web, Tor, and Hidden Services</h2>
+
+<h3>What is it?</h3>
+<p>
+The <b>surface web</b> is what search engines index. The <b>deep web</b> is
+everything behind a login or a query form — your bank statement, a university
+portal. The <b>dark web</b> is a small subset reachable only through special
+software, most commonly <b>Tor</b>.
+</p>
+
+<h3>Why does it exist?</h3>
+<p>
+Ordinary internet traffic reveals who is talking to whom. Even with HTTPS
+encrypting <em>what</em> you send, your ISP still sees <em>that</em> you
+contacted a particular server, and the server sees your IP address. For
+journalists, dissidents and criminals alike, that metadata is the exposure.
+Tor was built to break the link between sender and destination.
+</p>
+
+<h3>How does it work?</h3>
+<p>
+Tor — "The Onion Router" — wraps your traffic in layers of encryption and routes
+it through three volunteer-run relays. Each relay peels one layer and learns
+only its immediate neighbours:
+</p>
+
+<div class="diagram">
+  YOU ──encrypted──▶ GUARD ──encrypted──▶ MIDDLE ──encrypted──▶ EXIT ──▶ destination
+       (knows you,        (knows guard         (knows middle       (knows destination,
+        not the dest.)     and exit only)       and dest.)          not you)
+
+  No single relay ever sees both endpoints. That is the entire security argument.
+</div>
+
+<p>
+A <b>hidden service</b> (or <b>onion service</b>) goes further. The server itself
+is also anonymous — it never reveals its IP. Client and server each build
+circuits to a shared <em>rendezvous point</em>, so neither learns the other's
+location. The address is not a domain name bought from a registrar; it is
+derived from the service's public key:
+</p>
+
+<div class="diagram">
+  xqgo5m3u2srkq3kxclhktncfksbptbr2pui3rjhwknnv4uw6o3x2phqd.onion
+  └──────────────────── 56 characters, base32 ────────────────────┘
+
+  v3 onion addresses encode an Ed25519 public key plus a checksum and
+  version byte. The address IS the key — which is why you cannot seize
+  it from a registrar, and why NETRA-X validates exactly 56 characters
+  from the alphabet [a-z2-7].
+</div>
+
+<div class="box">
+  <span class="lbl">NETRA-X usage</span>
+  <p>
+    The onion-address pattern is enforced in
+    <code>workers/extraction/extractor.py</code> as
+    <code>ONION_SERVICE_REGEX = re.compile(r"\b[a-z2-7]{56}\.onion\b", re.IGNORECASE)</code>.
+    The strictness matters: a 54- or 55-character string is not a valid v3
+    address, and accepting one would put a fabricated identifier into the
+    evidence ledger.
+  </p>
+</div>
+
+<h3>Why is anonymity difficult to break?</h3>
+<p>
+Attacking Tor directly requires either controlling a large fraction of the
+network (to correlate traffic timing at both ends), or exploiting the software.
+Both are expensive, legally fraught, and outside what a hackathon project — or
+most lawful investigations — can or should do.
+</p>
+
+<div class="box good">
+  <span class="lbl">The central design premise</span>
+  <p>
+    <b>NETRA-X does not attack Tor.</b> It never attempts traffic correlation,
+    relay operation, or exploitation. It works exclusively on information that
+    operators voluntarily published or accidentally exposed. This is not a
+    limitation apologetically accepted — it is the design, and it is what makes
+    the system lawful and its output defensible.
+  </p>
+</div>
+
+<h2>1.2 What Still Leaks</h2>
+
+<p>
+Anonymity systems protect the <em>network layer</em>. They do nothing about
+human behaviour or server misconfiguration. Operators leak in six recurring
+ways, and each maps to an evidence family in the engine.
+</p>
+
+<table>
+<thead><tr><th style="width:20%">Leak</th><th style="width:44%">What it is and why it happens</th><th style="width:36%">Why it identifies someone</th></tr></thead>
+<tbody>
+<tr><td><b>PGP keys</b></td>
+    <td>Public keys published so buyers can encrypt messages. Reused across marketplaces because generating and re-establishing reputation on a new key is costly.</td>
+    <td>A fingerprint is a 160-bit hash. Two people never share one by accident. This is the strongest single signal that exists.</td></tr>
+<tr><td><b>Crypto wallets</b></td>
+    <td>Payment addresses posted publicly. Bitcoin's ledger is fully public and permanent.</td>
+    <td>Address reuse links personas directly. Co-spending in one transaction proves common key control.</td></tr>
+<tr><td><b>Infrastructure</b></td>
+    <td>Favicon files, TLS certificates, server banners, HTTP headers — copied wholesale when an operator clones their site to a new host.</td>
+    <td>An identical favicon on an onion service and a clearnet host is a pivot from anonymous to attributable.</td></tr>
+<tr><td><b>Writing style</b></td>
+    <td>Function-word frequencies, punctuation habits, character n-grams. Largely unconscious and hard to suppress deliberately.</td>
+    <td>Weak per-sample but persistent. Useful only in aggregate and only with enough text.</td></tr>
+<tr><td><b>Handles</b></td>
+    <td>Usernames. People pick memorable names and reuse or lightly mutate them.</td>
+    <td>Weak — handles collide constantly. <code>shadow</code> is not evidence of anything.</td></tr>
+<tr><td><b>Temporal patterns</b></td>
+    <td>Posting times cluster into waking hours, revealing an approximate timezone.</td>
+    <td>Very weak alone. Millions share any given schedule. Useful only as corroboration.</td></tr>
+</tbody>
+</table>
+
+<div class="box warn">
+  <span class="lbl">Why this table is the whole design</span>
+  <p>
+    Notice the enormous spread in strength. A PGP fingerprint match is
+    conclusive; a shared timezone is nearly worthless. Any system that treats
+    these as comparable "links" will produce confident nonsense. The
+    mathematics in Volume 3 exists precisely to encode this spread numerically
+    rather than leaving it to a developer's intuition.
+  </p>
+</div>
+
+<h2>1.3 Core Concepts, Defined</h2>
+
+<dl class="gloss">
+<dt>Identifier</dt>
+<dd>Any string that points to an entity: a handle, wallet address, PGP fingerprint, onion address, email. Some are near-unique (fingerprints); some are nearly meaningless alone (a common username).</dd>
+
+<dt>Persona</dt>
+<dd>A named online identity — one handle on one platform. An operator may run many personas. The <em>persona</em> is what you observe; the <em>operator</em> is what you want to identify.</dd>
+
+<dt>Entity resolution</dt>
+<dd>Deciding whether two records refer to the same real-world entity. The academic field is <b>record linkage</b>, formalised by Fellegi and Sunter in 1969 for census data — matching "J. Smith, 42 Oak St" to "John Smith, 42 Oak Street" without a shared key.</dd>
+
+<dt>Attribution</dt>
+<dd>In cybersecurity, determining who is responsible for an activity. NETRA-X performs <em>persona-level</em> attribution — linking online identities to each other — not <em>real-world</em> attribution to a named human.</dd>
+
+<dt>OSINT</dt>
+<dd>Open-Source Intelligence: collection from publicly available sources. Distinguished from SIGINT or HUMINT by requiring no privileged access, which is what makes it lawful for a broad range of actors.</dd>
+
+<dt>Provenance</dt>
+<dd>The complete recorded history of a piece of evidence: where it came from, when, under what legal basis, and proof it has not changed since. Without provenance, evidence is merely an assertion.</dd>
+
+<dt>Link analysis</dt>
+<dd>Studying relationships between entities as a graph rather than as isolated records — the structural view that makes clusters and brokers visible.</dd>
+</dl>
+
+<h2>1.4 The Problem NETRA-X Solves</h2>
+
+<p>
+An analyst investigating a marketplace vendor accumulates fragments: a forum
+post here, a PGP block there, a wallet address in a listing, a mirror site with
+a familiar layout. The fragments plainly relate — but "plainly" is doing
+dangerous work in that sentence.
+</p>
+
+<h3>The naive approach and why it fails</h3>
+
+<p>
+The obvious solution is a rule engine: if two personas share an identifier,
+link them.
+</p>
+
+<pre><code>if persona_a.pgp == persona_b.pgp:      link()     # correct
+if persona_a.handle == persona_b.handle: link()     # frequently wrong
+if same_timezone(a, b):                  link()     # almost always wrong</code></pre>
+
+<p>Four failure modes make this untenable:</p>
+
+<ol>
+<li><b>All evidence is treated as equal.</b> A shared fingerprint and a shared timezone both produce "link", though one is near-proof and the other is nearly noise.</li>
+<li><b>Evidence cannot accumulate.</b> Five weak signals may jointly be persuasive. A boolean rule cannot express "weak, but five of them, and independent."</li>
+<li><b>Correlated evidence is double-counted.</b> A reused wallet address and a co-spending cluster containing that address are <em>one</em> leak observed twice. Counting both doubles the apparent confidence for no new information.</li>
+<li><b>There is no way to express uncertainty.</b> The output is a link or no link. An analyst cannot triage, and a court cannot weigh it.</li>
+</ol>
+
+<div class="box bad">
+  <span class="lbl">The consequence that matters</span>
+  <p>
+    In attribution, a false positive is not a bug — it is an accusation against
+    the wrong person. A system that cannot say <em>"the evidence is
+    insufficient"</em> will instead say something false. Abstention must be a
+    first-class output, not an error path.
+  </p>
+</div>
+
+<h3>The NETRA-X formulation</h3>
+<p>
+NETRA-X reframes linking as <b>probabilistic inference</b>. Rather than asking
+"do these match?", it asks: <em>given this specific evidence, how much more
+likely is it that these two personas are the same operator than that they are
+strangers who happen to look similar?</em>
+</p>
+<p>
+That question has a formal answer — the likelihood ratio — developed in
+Volume 3. Every design decision downstream follows from taking it seriously.
+</p>
+
+<h2>1.5 The Twelve-Stage Pipeline</h2>
+
+<p>
+Every piece of information travels the same path. This diagram is the map for
+the entire document; later volumes zoom into individual stages.
+</p>
+
+<div class="diagram">
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │ 1  SOURCE          Lawful basis recorded before anything is stored       │
+ │                    → sources table (lawful_basis NOT NULL)               │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 2  OBSERVATION     Raw content captured verbatim + content_hash          │
+ │                    → observations table                                  │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 3  ARTIFACT        SHA-256 digest computed over exact bytes              │
+ │                    → artifacts table   [the anchor of all provenance]    │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 4  EXTRACTION      Regex + parsers pull identifiers out of the bytes     │
+ │                    → workers/extraction/extractor.py                     │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 5  EVIDENCE        Each identifier stored with method + dependence_group │
+ │                    → evidence table (append-only)                        │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 6  CANDIDATES      Which pairs are even worth comparing?                 │
+ │                    → packages/attribution/candidate_gen.py   [NOT WIRED] │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 7  FEATURES        Each shared signal → an EvidenceItem with m/u priors  │
+ │                    → packages/common/types.py                            │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 8  FUSION          LLR per item → dependence discount → family caps      │
+ │                    → packages/attribution/fusion.py      [THE CORE]      │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 9  CALIBRATION     LLR → posterior probability in [0,1]                  │
+ │                    → packages/attribution/calibration.py                 │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 10 DECISION        HIGH / LOW / INSUFFICIENT / CONTRADICTION_REJECTED    │
+ │                    → packages/attribution/decide.py                      │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 11 REVIEW          A human accepts or rejects. Machine never decides.    │
+ │                    → analyst_reviews + audit chain                       │
+ ├──────────────────────────────────────────────────────────────────────────┤
+ │ 12 EXPORT          STIX 2.1 / PDF / CSV / JSON, provenance preserved     │
+ │                    → packages/evidence/stix_export.py, reporting.py      │
+ └──────────────────────────────────────────────────────────────────────────┘
+</div>
+
+<p class="caption">
+Stages 1–3 establish that evidence is real and traceable. Stages 4–7 turn bytes
+into comparable features. Stages 8–10 are the inference engine. Stages 11–12
+keep a human accountable for every conclusion that leaves the system.
+</p>
+
+<h3>Stage-by-stage input/output contract</h3>
+
+<table>
+<thead><tr><th style="width:13%">Stage</th><th style="width:20%">Input</th><th style="width:22%">Output</th><th style="width:23%">Module</th><th style="width:22%">Principal failure mode</th></tr></thead>
+<tbody>
+<tr><td>Source</td><td>Collection config</td><td><code>Source</code> row</td><td><code>apps/api/main.py</code></td><td>Missing lawful basis → row rejected</td></tr>
+<tr><td>Observation</td><td>Raw bytes</td><td><code>Observation</code> + hash</td><td><code>main.py</code> ingest</td><td>Duplicate content re-stored</td></tr>
+<tr><td>Artifact</td><td>Bytes</td><td>SHA-256</td><td><code>warc_writer.py</code></td><td>Digest computed over normalised, not raw, bytes</td></tr>
+<tr><td>Extraction</td><td>Text</td><td>Identifier list</td><td><code>extractor.py</code></td><td>Regex too loose (false IDs) or too tight (misses)</td></tr>
+<tr><td>Evidence</td><td>Identifiers</td><td><code>Evidence</code> rows</td><td><code>main.py</code></td><td>Wrong <code>dependence_group</code> → double counting</td></tr>
+<tr><td>Candidates</td><td>Profile</td><td>Ranked pairs</td><td><code>candidate_gen.py</code></td><td>Recall loss: a true pair never compared</td></tr>
+<tr><td>Features</td><td>Shared signals</td><td><code>EvidenceItem</code></td><td><code>types.py</code></td><td>Mis-assigned family → wrong cap</td></tr>
+<tr><td>Fusion</td><td>Items</td><td>final LLR</td><td><code>fusion.py</code></td><td>Correlated evidence inflating the score</td></tr>
+<tr><td>Calibration</td><td>LLR</td><td><i>P</i> ∈ [0,1]</td><td><code>calibration.py</code></td><td>Uncalibrated prior → misleading probability</td></tr>
+<tr><td>Decision</td><td><i>P</i></td><td>Enum + reason</td><td><code>decide.py</code></td><td>Threshold mismatched to operational cost</td></tr>
+<tr><td>Review</td><td>Hypothesis</td><td>Accept/reject</td><td><code>main.py</code></td><td>Analyst rubber-stamping the machine</td></tr>
+<tr><td>Export</td><td>Hypothesis</td><td>STIX/PDF/CSV</td><td><code>stix_export.py</code></td><td>Provenance dropped in the export</td></tr>
+</tbody>
+</table>
+
+<!-- ==================================================== VOLUME 2 -->
+<h1 class="vol"><span class="vnum">Volume Two</span>Architecture &amp; Codebase</h1>
+<div class="volrule"></div>
+
+<h2>2.1 The Simple View</h2>
+
+<p>Explained to someone non-technical, NETRA-X has four parts:</p>
+
+<div class="diagram">
+  ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+  │  COLLECT   │──▶│   REASON   │──▶│   RECORD   │──▶│   PRESENT  │
+  ├────────────┤   ├────────────┤   ├────────────┤   ├────────────┤
+  │ Take in    │   │ Weigh the  │   │ Store what │   │ Show the   │
+  │ pages and  │   │ evidence   │   │ was seen,  │   │ analyst    │
+  │ posts;     │   │ and score  │   │ hash it so │   │ the links, │
+  │ pull out   │   │ how likely │   │ tampering  │   │ the reason │
+  │ identifiers│   │ a link is  │   │ is visible │   │ and score  │
+  └────────────┘   └────────────┘   └────────────┘   └────────────┘
+     workers/        packages/         apps/api/        apps/web/
+                     attribution/      database/
+</div>
+
+<h2>2.2 The Technical View</h2>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────────────────────┐
+│  BROWSER — Next.js 14 App Router · React 18 · TypeScript 5 · Tailwind   │
+│  ┌───────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌───────────────┐ │
+│  │ Command   │ │ Graph    │ │Attribut. │ │Evidence │ │ Copilot       │ │
+│  │ Center    │ │ Explorer │ │ Lab      │ │ Vault   │ │ Drawer        │ │
+│  └───────────┘ └──────────┘ └──────────┘ └─────────┘ └───────────────┘ │
+│         └──────────── lib/api.ts · JWT in localStorage ────────────┘    │
+└──────────────────────────────────┬──────────────────────────────────────┘
+                                   │ HTTPS · Bearer JWT · CORS allow-list
+┌──────────────────────────────────▼──────────────────────────────────────┐
+│  API — FastAPI · Pydantic v2 · SQLAlchemy 2.0 · 38 endpoints            │
+│  auth · actors · graph · evidence · hypotheses · review · exports ·      │
+│  audit · copilot · investigations · config                              │
+└───┬──────────────────┬──────────────────┬─────────────────┬─────────────┘
+    │                  │                  │                 │
+┌───▼────────┐ ┌───────▼───────┐ ┌────────▼──────┐ ┌────────▼──────────┐
+│ ATTRIBUTION│ │  EXTRACTION   │ │   EVIDENCE    │ │     COPILOT       │
+│ fusion.py  │ │ extractor.py  │ │ audit.py      │ │ tools.py          │
+│ decide.py  │ │ clone_det.py  │ │ integrity.py  │ │ answer.py         │
+│ calibrat.  │ │ onion_probe   │ │ reporting.py  │ │ knowledge.py      │
+│ candidate  │ │ warc_writer   │ │ stix_export   │ │ llm.py (optional) │
+│ financial  │ │               │ │ auth.py       │ │                   │
+│ stylometry │ │               │ │               │ │                   │
+└─────┬──────┘ └───────┬───────┘ └───────┬───────┘ └─────────┬─────────┘
+      └────────────────┴─────────┬───────┴───────────────────┘
+                                 │
+      ┌──────────────────────────▼───────────────────────────┐
+      │  PERSISTENCE                                          │
+      │  SQLite (default, netrax.db) · PostgreSQL 16 (compose)│
+      │  19 tables · SHA-256 hash-chained audit_logs          │
+      │  Neo4j 5 — optional projection, degrades gracefully   │
+      └───────────────────────────────────────────────────────┘
+</div>
+
+<div class="box warn">
+  <span class="lbl">Verified deviation from the pitch material</span>
+  <p>
+    The architecture slide shows PostgreSQL 16 as the datastore. The default
+    runtime database is <b>SQLite</b>:
+    <code>DEFAULT_DB_URL_SYNC = "sqlite:///./netrax.db"</code> in
+    <code>apps/api/database/session.py:16</code>. PostgreSQL is defined in
+    <code>docker-compose.yml</code> and is selected by setting
+    <code>DATABASE_URL</code>, but no default path uses it. Similarly
+    <b>pgvector</b> appears in a docstring in <code>candidate_gen.py</code>;
+    <b>no vector column exists in any model</b>.
+  </p>
+</div>
+
+<h2>2.3 Repository Map</h2>
+
+<table>
+<thead><tr><th style="width:24%">Path</th><th style="width:9%">LOC</th><th style="width:67%">Responsibility</th></tr></thead>
+<tbody>
+<tr><td><code>apps/api/</code></td><td>~1,700</td><td>FastAPI application. 38 endpoints, SQLAlchemy models (19 tables), session management, startup seeding.</td></tr>
+<tr><td><code>apps/web/src/</code></td><td>4,868</td><td>Next.js 14 frontend. 17 components, one API client, one route.</td></tr>
+<tr><td><code>packages/attribution/</code></td><td>1,554</td><td><b>The inference engine.</b> Fusion, calibration, decision, candidate generation, financial heuristics, graph embeddings, reporting.</td></tr>
+<tr><td><code>packages/evidence/</code></td><td>1,108</td><td>Ledger integrity. Audit chain, auth, provenance, PDF/STIX export, referential integrity, UUIDv7.</td></tr>
+<tr><td><code>packages/stylometry/</code></td><td>641</td><td>Authorship analysis. Feature extraction, Burrows's Delta, cosine similarity, episode gating, neural encoder.</td></tr>
+<tr><td><code>packages/copilot/</code></td><td>~1,000</td><td>Grounded question answering over the ledger. 16 read-only tools, deterministic answerer, product knowledge, optional Claude path.</td></tr>
+<tr><td><code>packages/common/</code></td><td>192</td><td>Shared types. <code>EvidenceItem</code>, <code>EvidenceFamily</code>, <code>FAMILY_CAPS</code>, contribution breakdown.</td></tr>
+<tr><td><code>packages/graph/</code></td><td>259</td><td>Neo4j projection with graceful degradation when unavailable.</td></tr>
+<tr><td><code>packages/schemas/</code></td><td>~300</td><td>Pydantic request/response contracts shared by API and tests.</td></tr>
+<tr><td><code>workers/extraction/</code></td><td>164</td><td>Identifier extraction (regex) and SimHash clone detection.</td></tr>
+<tr><td><code>workers/collection/</code></td><td>154</td><td>Onion probing, artifact hashing, Redis event bus.</td></tr>
+<tr><td><code>bench/</code></td><td>~500</td><td>Synthetic benchmark generation and metric evaluation.</td></tr>
+<tr><td><code>seed/</code></td><td>~700</td><td>Deterministic demo dataset: hero scenario plus a 14-actor network.</td></tr>
+<tr><td><code>tests/</code></td><td>~2,000</td><td>115 tests across 18 files.</td></tr>
+</tbody>
+</table>
+
+<h2>2.4 The Data Model</h2>
+
+<p>
+Nineteen tables. The critical structural idea is the <b>provenance chain</b> —
+you can walk from any score back to the exact bytes it came from.
+</p>
+
+<div class="diagram">
+  sources ──▶ observations ──▶ artifacts ──▶ evidence ──┐
+  (lawful      (raw content     (SHA-256      (extracted │
+   basis)       + hash)          digest)       value)    │
+                                                         │
+                                       hypothesis_evidence
+                                                         │
+  actors ◀── aliases, accounts, pgp_keys, wallets        │
+    │                                                    ▼
+    └──────────────▶ hypotheses ◀───────────────── (join table carries
+                         │                           family, raw_llr,
+                         ▼                           contribution,
+                   analyst_reviews                   is_contradiction)
+                         │
+                         ▼
+                    audit_logs   ← SHA-256 hash chain over every action
+</div>
+
+<table>
+<thead><tr><th style="width:22%">Table</th><th style="width:78%">Purpose and the reason it exists in this shape</th></tr></thead>
+<tbody>
+<tr><td><code>sources</code></td><td>Collection origin. <code>lawful_basis</code> is <b>NOT NULL</b> — legality is a property of every observation, not an optional annotation.</td></tr>
+<tr><td><code>observations</code></td><td>Raw captured content plus <code>content_hash</code> for duplicate detection.</td></tr>
+<tr><td><code>artifacts</code></td><td>SHA-256 over exact bytes. <b>The anchor of provenance</b> — every evidence row points here.</td></tr>
+<tr><td><code>evidence</code></td><td>One extracted identifier. Carries <code>dependence_group</code> (drives discounting) and retraction columns.</td></tr>
+<tr><td><code>actors</code>, <code>aliases</code>, <code>accounts</code>, <code>pgp_keys</code>, <code>wallets</code>, <code>onion_services</code>, <code>servers</code></td><td>Entity tables. Aliases are separate from actors because one operator wears many handles — that separation <em>is</em> the product thesis.</td></tr>
+<tr><td><code>hypotheses</code></td><td>A scored claim that two actors are one. Stores <code>raw_log_lr</code>, <code>calibrated_prob</code>, <code>status</code>, model and calibration versions.</td></tr>
+<tr><td><code>hypothesis_evidence</code></td><td>Join table carrying <code>family</code>, <code>raw_llr</code>, <code>contribution</code>, <code>is_contradiction</code>. <b>This is the waterfall</b> — the per-item answer to "why do you believe that".</td></tr>
+<tr><td><code>analyst_reviews</code></td><td>Human decisions. Separate from <code>hypotheses.status</code> because the decision (a verb) and the resulting state differ.</td></tr>
+<tr><td><code>audit_logs</code></td><td>Append-only, hash-chained. Columns <code>seq</code>, <code>payload</code>, <code>payload_hash</code>, <code>prev_hash</code>, <code>entry_hash</code>.</td></tr>
+<tr><td><code>cases</code>, <code>case_members</code>, <code>case_identifiers</code></td><td>Investigation workspace and the identifiers attached to it.</td></tr>
+</tbody>
+</table>
+
+<h2>2.5 Tracing a Request End-to-End</h2>
+
+<p>What actually happens when an analyst opens a hypothesis:</p>
+
+<div class="diagram">
+ 1  Browser    AttributionLab.tsx mounts
+                 └─▶ apiFetch("/api/v1/hypotheses/{id}")
+                       adds Authorization: Bearer &lt;JWT from localStorage&gt;
+
+ 2  CORS       Origin checked against CORS_ORIGINS allow-list
+                 (wildcard + credentials is rejected by browsers — hence
+                  an explicit list, main.py:53)
+
+ 3  Auth       Depends(get_current_user)
+                 └─▶ decode_access_token() — PyJWT, HS256
+                 └─▶ 401 if signature invalid or user absent
+
+ 4  Handler    get_hypothesis(id, db, user)      main.py:~880
+                 └─▶ joinedload(evidence_items → evidence → artifact)
+                     one query, no N+1
+
+ 5  Assemble   for he in h.evidence_items:
+                   build EvidenceWaterfallItem
+                     sha256 = ev.artifact.sha256  if present else None
+                     ← previously defaulted to e3b0c442…b855, the SHA-256
+                       of the EMPTY STRING, presenting absent provenance
+                       as a verified digest. Now returns null.
+
+ 6  Tier       calibrated_prob ≥ 0.85 → "High Confidence"
+                                ≥ 0.60 → "Medium Confidence"
+                                ≥ 0.35 → "Low Confidence"
+                                else   → "Insufficient Evidence"
+
+ 7  Response   HypothesisSchema — Pydantic validates on the way out;
+               a malformed field is a 500 here, not corrupt data downstream
+
+ 8  Render     EvidenceWaterfall.tsx draws one bar per family, signed
+               contributions, contradictions in red, digest under each row
+</div>
+
+<!-- ==================================================== VOLUME 3 -->
+<h1 class="vol"><span class="vnum">Volume Three</span>Mathematics: Bayes, Likelihood Ratios and Fusion</h1>
+<div class="volrule"></div>
+
+<p class="lead">
+This is the intellectual core of NETRA-X. Everything here is implemented in
+<code>packages/attribution/fusion.py</code> (249 lines),
+<code>calibration.py</code> (65 lines) and <code>decide.py</code> (163 lines).
+We build from school-level probability up to the exact expressions the code
+evaluates.
+</p>
+
+<h2>3.1 Probability Foundations</h2>
+
+<h3>Basic probability</h3>
+<p>
+A probability <var>P(A)</var> is a number in [0, 1] measuring how likely event
+<var>A</var> is. <var>P</var> = 0 means impossible, 1 means certain.
+</p>
+
+<h3>Conditional probability</h3>
+<p>
+<var>P(A|B)</var> — "the probability of <var>A</var> <b>given</b> <var>B</var>"
+— is the probability of <var>A</var> once you already know <var>B</var>
+happened. This is the single most important idea in the document.
+</p>
+
+<div class="eq">
+  <var>P(A|B)</var> = <var>P(A ∩ B)</var> / <var>P(B)</var>
+  <span class="lbl">conditional probability</span>
+</div>
+
+<p>
+<b>Concrete example.</b> Pick a random person. <var>P</var>(uses Tor) might be
+0.01. But <var>P</var>(uses Tor | posts on a darknet marketplace) is close to
+1. The evidence changed the probability enormously. That change is exactly what
+NETRA-X measures.
+</p>
+
+<h3>Independence</h3>
+<p>
+Events <var>A</var> and <var>B</var> are <b>independent</b> if knowing one tells
+you nothing about the other: <var>P(A|B)</var> = <var>P(A)</var>. Independence
+matters here because it is the assumption that allows evidence to be
+<em>added</em> — and it is frequently violated in practice, which is why
+Section 3.6 exists.
+</p>
+
+<h2>3.2 Bayes' Theorem</h2>
+
+<h3>Why does it exist?</h3>
+<p>
+We can usually measure <var>P</var>(evidence | hypothesis) — "if these really
+were the same person, how often would we see this?" But we want
+<var>P</var>(hypothesis | evidence) — "given what we see, are they the same
+person?" Bayes' theorem converts between the two.
+</p>
+
+<div class="eq">
+  <var>P(H|E)</var> = <var>P(E|H)</var> · <var>P(H)</var> / <var>P(E)</var>
+  <span class="lbl">Bayes' theorem</span>
+</div>
+
+<table>
+<thead><tr><th style="width:14%">Term</th><th style="width:20%">Name</th><th style="width:66%">Meaning in NETRA-X</th></tr></thead>
+<tbody>
+<tr><td><var>P(H)</var></td><td>Prior</td><td>Belief that two randomly chosen personas are the same operator, <em>before</em> looking at evidence. Low — most personas are unrelated.</td></tr>
+<tr><td><var>P(E|H)</var></td><td>Likelihood</td><td>Probability of seeing this evidence <em>if</em> they are the same operator.</td></tr>
+<tr><td><var>P(E)</var></td><td>Marginal</td><td>Probability of seeing this evidence at all. Usually hard to compute — which motivates the ratio form.</td></tr>
+<tr><td><var>P(H|E)</var></td><td>Posterior</td><td>Updated belief after weighing the evidence. <b>The output we want.</b></td></tr>
+</tbody>
+</table>
+
+<h3>A worked numerical example</h3>
+<div class="box">
+  <span class="lbl">Medical analogy — the base-rate trap</span>
+  <p>
+    A disease affects 1 in 1,000. A test is 99% accurate both ways. You test
+    positive. What is <var>P</var>(sick | positive)?
+  </p>
+  <p>
+    Most people answer 99%. Consider 100,000 people: 100 are sick and 99 test
+    positive; 99,900 are healthy and 1% — <b>999 people</b> — test positive
+    anyway. So 1,098 positives, of whom 99 are truly sick:
+    <b><var>P</var> ≈ 9%</b>, not 99%.
+  </p>
+  <p>
+    <b>Why this governs NETRA-X:</b> the prior dominates when the base rate is
+    low. Most persona pairs are unrelated, so weak evidence must not be allowed
+    to produce a confident link. This is encoded directly as
+    <code>prior_odds_log = -2.0</code> in <code>calibration.py:13</code>.
+  </p>
+</div>
+
+<h2>3.3 The Likelihood Ratio</h2>
+
+<h3>Why a ratio?</h3>
+<p>
+<var>P(E)</var> in Bayes' theorem is awkward — computing the probability of
+observing a given body of evidence in general is not tractable. But if we
+compare two competing hypotheses over the <em>same</em> evidence, that term
+cancels.
+</p>
+
+<p>Define the two hypotheses:</p>
+<ul>
+<li><var>H₁</var> — the personas are the <b>same</b> operator</li>
+<li><var>H₀</var> — the personas are <b>different</b> operators</li>
+</ul>
+
+<div class="eq">
+  LR = <var>P(E|H₁)</var> / <var>P(E|H₀)</var>
+  <span class="lbl">likelihood ratio</span>
+</div>
+
+<p>In record-linkage terminology (Fellegi &amp; Sunter, 1969) these are named:</p>
+
+<table>
+<thead><tr><th style="width:12%">Symbol</th><th style="width:38%">Definition</th><th style="width:50%">Example — PGP fingerprint match</th></tr></thead>
+<tbody>
+<tr><td><var>m</var></td><td><var>P</var>(observe this signal | same operator)</td><td>0.9999 — if it is the same operator, their fingerprint almost certainly matches</td></tr>
+<tr><td><var>u</var></td><td><var>P</var>(observe this signal | different operators)</td><td>0.00000001 — two strangers essentially never share a 160-bit fingerprint</td></tr>
+</tbody>
+</table>
+
+<h3>Why logarithms?</h3>
+<p>Three reasons, all practical:</p>
+<ol>
+<li><b>Multiplication becomes addition.</b> Independent evidence multiplies likelihood ratios; logs turn that into a sum, which is far easier to compute, cap, discount and explain.</li>
+<li><b>Numerical stability.</b> The PGP ratio is 0.9999 / 10⁻⁸ ≈ 10⁸. Chaining several such ratios overflows quickly. Logs keep values in a comfortable range.</li>
+<li><b>Symmetry.</b> Evidence for is positive, evidence against is negative, and neutral evidence is exactly zero.</li>
+</ol>
+
+<div class="eq">
+  LLR = ln(<var>m</var> / <var>u</var>)
+  <span class="lbl">log-likelihood ratio — the atom of the whole engine</span>
+</div>
+
+<h3>Reading LLR values</h3>
+<table>
+<thead><tr><th style="width:16%">LLR</th><th style="width:20%">Likelihood ratio</th><th style="width:64%">Interpretation</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>1×</td><td>Evidence is uninformative — equally likely either way</td></tr>
+<tr><td>+2.3</td><td>10×</td><td>Ten times more likely if same operator</td></tr>
+<tr><td>+4.6</td><td>100×</td><td>Strong evidence</td></tr>
+<tr><td>+18.4</td><td>10⁸×</td><td>A PGP fingerprint match, uncapped</td></tr>
+<tr><td>−2.3</td><td>0.1×</td><td>Evidence <em>against</em> the link</td></tr>
+</tbody>
+</table>
+
+<h3>The actual implementation</h3>
+
+<span class="filepath">packages/common/types.py:53–68 — EvidenceItem.get_effective_llr()</span>
+<pre><code>def get_effective_llr(self) -> float:
+    if self.abstain:          return 0.0
+    if self.is_contradiction: return 0.0
+    if self.llr is not None:
+        base_llr = self.llr
+    else:
+        u_safe = max(self.u_i, 1e-12)      # guard against div-by-zero
+        m_safe = max(self.m_i, 1e-12)
+        base_llr = math.log(m_safe / u_safe)
+
+    effective_mult = max(0.0, min(1.0, self.source_reliability
+                                       * self.credibility_multiplier))
+    return base_llr * effective_mult</code></pre>
+
+<h4>Line-by-line</h4>
+<ul>
+<li><b>Abstention returns exactly 0.0</b> — not a small number, not a guess. An item that abstains contributes nothing, which is the arithmetic expression of "we do not know."</li>
+<li><b>Contradictions return 0.0 here</b> and are handled separately (§3.7) because they must bypass family caps.</li>
+<li><b>The 1e-12 floor</b> prevents division by zero and infinite LLR. With <var>u</var> = 10⁻⁸ for PGP, the raw LLR is ln(0.9999/10⁻⁸) ≈ <b>18.4</b>.</li>
+<li><b>The multiplier is clamped to [0,1]</b>, so an unreliable source can only ever <em>weaken</em> evidence, never amplify it. A source cannot be more than fully trusted.</li>
+</ul>
+
+<div class="eq">
+  LLR<sub><var>i</var></sub> = ln(<var>m<sub>i</sub></var> / <var>u<sub>i</sub></var>) × reliability × credibility
+  <span class="lbl">effective item LLR, as implemented</span>
+</div>
+
+<h2>3.4 The Prior Table</h2>
+
+<p>
+All <var>m</var> and <var>u</var> values live in
+<code>packages/attribution/mu_table.yaml</code> — <b>11 features and 2
+contradictions</b>. These are expert-elicited, not learned; Volume 4 examines
+that honestly.
+</p>
+
+<table>
+<thead><tr><th style="width:26%">Feature</th><th style="width:20%">Family</th><th style="width:9%"><var>m</var></th><th style="width:13%"><var>u</var></th><th style="width:11%">LLR</th><th style="width:21%">Rationale</th></tr></thead>
+<tbody>
+<tr><td><code>pgp_fingerprint_exact</code></td><td>EXACT_IDENTITY</td><td>0.9999</td><td>10⁻⁸</td><td><b>18.4</b></td><td>160-bit hash; collision is negligible</td></tr>
+<tr><td><code>ssh_host_key_fingerprint</code></td><td>EXACT_IDENTITY</td><td>0.999</td><td>10⁻⁷</td><td>16.1</td><td>Host key reuse across servers</td></tr>
+<tr><td><code>btc_address_reuse</code></td><td>FINANCIAL</td><td>0.95</td><td>10⁻⁵</td><td>11.5</td><td>Direct address reuse</td></tr>
+<tr><td><code>btc_co_input_clustering</code></td><td>FINANCIAL</td><td>0.90</td><td>10⁻⁴</td><td>9.1</td><td>Co-spend implies common key control</td></tr>
+<tr><td><code>favicon_mmh3_hash</code></td><td>INFRASTRUCTURE</td><td>0.92</td><td>10⁻⁴</td><td>9.1</td><td>Identical favicon across hosts</td></tr>
+<tr><td><code>ssl_tls_cert_serial</code></td><td>INFRASTRUCTURE</td><td>0.88</td><td>5×10⁻⁴</td><td>7.5</td><td>Matching custom certificate</td></tr>
+<tr><td><code>simhash_clone_95</code></td><td>CONTENT_NLP</td><td>0.85</td><td>10⁻³</td><td>6.7</td><td>Near-duplicate page content</td></tr>
+<tr><td><code>unique_typo_signature</code></td><td>CONTENT_NLP</td><td>0.75</td><td>5×10⁻³</td><td>5.0</td><td>Idiosyncratic jargon or typo</td></tr>
+<tr><td><code>stylometry_burrows_delta</code></td><td>STYLOMETRY</td><td>0.82</td><td>10⁻²</td><td>4.4</td><td>Low Delta distance</td></tr>
+<tr><td><code>temporal_diurnal_fit</code></td><td>TEMPORAL</td><td>0.70</td><td>0.10</td><td><b>1.9</b></td><td>Timezone overlap — deliberately weak</td></tr>
+<tr><td><code>handle_trigram_fuzzy</code></td><td>SEMANTIC_HANDLE</td><td>0.80</td><td>0.05</td><td>2.8</td><td>Similar handle spelling</td></tr>
+</tbody>
+</table>
+
+<div class="box">
+  <span class="lbl">Read the spread</span>
+  <p>
+    A PGP match (18.4) is worth roughly <b>ten timezone matches</b> (1.9 each).
+    That single ordering is the entire argument for a probabilistic engine over
+    a rule engine — and it is data in a YAML file, not logic buried in code, so
+    it can be revised without touching the engine.
+  </p>
+</div>
+
+<h2>3.5 Evidence Accumulation</h2>
+
+<p>
+For genuinely independent evidence, likelihood ratios multiply — so
+log-likelihood ratios add:
+</p>
+
+<div class="eq">
+  LLR<sub>total</sub> = Σ<sub><var>i</var></sub> LLR<sub><var>i</var></sub>
+  <span class="lbl">naive accumulation — valid only under independence</span>
+</div>
+
+<p>
+This is where naive implementations break, and where NETRA-X does three
+non-obvious things: dependence discounting, family caps, and uncapped
+contradictions.
+</p>
+
+<h2>3.6 Dependence Discounting</h2>
+
+<h3>The problem</h3>
+<p>
+Suppose an operator reuses one Bitcoin address, and that address also appears in
+a co-spending cluster. Two evidence items fire:
+</p>
+<ul>
+<li><code>btc_address_reuse</code> → LLR 11.5</li>
+<li><code>btc_co_input_clustering</code> → LLR 9.1</li>
+</ul>
+<p>
+Naively summed: 20.6, implying evidence of roughly 10⁹ : 1. But these are not
+independent observations — they are <b>one wallet leak seen two ways</b>. The
+second item adds almost no new information.
+</p>
+
+<h3>The solution</h3>
+<p>
+Every evidence item declares a <code>dependence_group</code>. Within a group,
+the strongest item counts fully; each additional item is multiplied by
+<var>λ</var> = 0.25.
+</p>
+
+<div class="eq">
+  contribution<sub><var>i</var></sub> = LLR<sub>(1)</sub> &nbsp;if <var>i</var> = 1, &nbsp; else&nbsp; <var>λ</var> · LLR<sub>(<var>i</var>)</sub>
+  &nbsp;&nbsp;with&nbsp; <var>λ</var> = 0.25
+  <span class="lbl">dependence discounting, sorted descending by LLR</span>
+</div>
+
+<span class="filepath">packages/attribution/fusion.py:150–162</span>
+<pre><code>for grp_id, grp_items in dep_groups.items():
+    sorted_grp = sorted(grp_items,
+                        key=lambda x: x.get_effective_llr(), reverse=True)
+    for idx, grp_item in enumerate(sorted_grp):
+        eff_llr = grp_item.get_effective_llr()
+        if idx == 0:
+            contrib = eff_llr            # strongest counts in full
+            is_disc = False
+        else:
+            contrib = self.lambda_discount * eff_llr   # λ = 0.25
+            is_disc = True
+        group_item_contribs.append((grp_item, contrib, is_disc))
+        uncapped_family_sum += contrib</code></pre>
+
+<p>
+<b>Applied to the wallet example:</b> 11.5 + (0.25 × 9.1) = 11.5 + 2.3 =
+<b>13.8</b>, not 20.6. The second observation still counts — it is corroboration
+— but at a quarter weight.
+</p>
+
+<div class="box warn">
+  <span class="lbl">Honest note on λ</span>
+  <p>
+    λ = 0.25 is a <b>hand-chosen constant</b>, not a fitted parameter. It
+    encodes the judgement "a correlated second observation is worth about a
+    quarter of an independent one." It is defensible and conservative, but it
+    was not learned from data, and this document does not claim otherwise.
+  </p>
+</div>
+
+<h2>3.7 Family Caps</h2>
+
+<h3>The problem</h3>
+<p>
+Even with discounting, an actor who leaks in one dimension twenty different ways
+could accumulate an enormous score from a <em>single kind</em> of evidence.
+</p>
+
+<h3>The solution</h3>
+<p>
+Each evidence family has a hard ceiling. If a family's discounted sum exceeds
+its cap, every contribution in that family is scaled down proportionally so the
+total equals the cap exactly.
+</p>
+
+<div class="eq">
+  scale = cap<sub><var>f</var></sub> / Σ contributions<sub><var>f</var></sub> &nbsp;&nbsp;(when the sum exceeds the cap)
+  <span class="lbl">proportional rescaling preserves relative ordering within a family</span>
+</div>
+
+<table>
+<thead><tr><th style="width:30%">Family</th><th style="width:12%">Cap</th><th style="width:58%">Why this ceiling</th></tr></thead>
+<tbody>
+<tr><td>EXACT_IDENTITY</td><td>10.0</td><td>Cryptographic identifiers; highest trust warranted</td></tr>
+<tr><td>FINANCIAL</td><td>7.5</td><td>Strong, but mixers and exchanges create genuine ambiguity</td></tr>
+<tr><td>INFRASTRUCTURE</td><td>5.0</td><td>Shared hosting and templates cause real collisions</td></tr>
+<tr><td>CONTENT_NLP</td><td>5.0</td><td>Text is copied between unrelated sites routinely</td></tr>
+<tr><td>STYLOMETRY</td><td>3.0</td><td>Deliberately low — see the note below</td></tr>
+<tr><td>TEMPORAL</td><td>2.0</td><td>Timezone overlap is very weak evidence</td></tr>
+<tr><td>SEMANTIC_HANDLE</td><td>2.0</td><td>Handles collide constantly</td></tr>
+</tbody>
+</table>
+
+<div class="box good">
+  <span class="lbl">The structural consequence — worth memorising</span>
+  <p>
+    The decision threshold sits at posterior <var>P</var> ≥ 0.85, which with
+    prior −2.0 requires LLR ≈ 3.73. But the caps make it <b>impossible to reach
+    high confidence from stylometry alone</b> (max 3.0), or from timezone alone
+    (max 2.0). Confidence structurally <em>requires</em> corroboration across
+    independent families. That property is enforced by arithmetic, not by
+    developer discipline.
+  </p>
+</div>
+
+<h2>3.8 Contradictions</h2>
+
+<p>
+Some observations do not merely fail to support a link — they actively
+disprove it. Two examples are encoded:
+</p>
+
+<table>
+<thead><tr><th style="width:34%">Contradiction</th><th style="width:13%">Weight</th><th style="width:53%">Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>pgp_key_conflict</code></td><td>−20.0</td><td>Different PGP keys explicitly published for the same profile</td></tr>
+<tr><td><code>temporal_impossible_overlap</code></td><td>−15.0</td><td>Simultaneous posts from geographically incompatible locations</td></tr>
+</tbody>
+</table>
+
+<div class="box">
+  <span class="lbl">Why contradictions are uncapped</span>
+  <p>
+    Supporting evidence is capped; contradicting evidence is not. This asymmetry
+    is deliberate and ethical. The cost of a false link (accusing the wrong
+    person) far exceeds the cost of a missed link (an investigation continues).
+    A −20 penalty can therefore overwhelm any amount of supporting evidence,
+    and the system fails toward silence.
+  </p>
+</div>
+
+<div class="eq">
+  LLR<sub>final</sub> = Σ<sub><var>f</var></sub> min(Σ contributions<sub><var>f</var></sub>, cap<sub><var>f</var></sub>) − Σ <var>W<sub>c</sub></var>
+  <span class="lbl">the complete fusion equation as implemented</span>
+</div>
+
+<h2>3.9 Calibration: From LLR to Probability</h2>
+
+<p>
+An LLR of 13.8 is meaningful to a statistician and meaningless to an analyst.
+Calibration maps it to a probability via the logistic (sigmoid) function.
+</p>
+
+<div class="eq">
+  <var>P(H₁|E)</var> = 1 / (1 + <var>e</var><sup>−(LLR + <var>prior</var>)</sup>) &nbsp;&nbsp; <var>prior</var> = −2.0
+  <span class="lbl">calibration.py:13–24</span>
+</div>
+
+<span class="filepath">packages/attribution/calibration.py:13–24</span>
+<pre><code>def sigmoid_llr_to_prob(llr: float, prior_odds_log: float = -2.0) -> float:
+    try:
+        val = llr + prior_odds_log
+        val_clipped = max(-50.0, min(50.0, val))   # prevent exp overflow
+        return 1.0 / (1.0 + math.exp(-val_clipped))
+    except OverflowError:
+        return 1.0 if llr > 0 else 0.0</code></pre>
+
+<h4>Why the prior is −2.0</h4>
+<p>
+A prior log-odds of −2.0 corresponds to prior odds of <var>e</var>⁻² ≈ 0.135,
+i.e. about a 12% prior probability that two arbitrary personas are the same
+operator. It shifts the curve right, so <b>zero evidence yields <var>P</var> ≈
+0.12, not 0.5</b>. Without it, an evidence-free pair would look like a coin
+flip rather than an unlikely claim.
+</p>
+
+<table>
+<thead><tr><th style="width:20%">LLR</th><th style="width:22%">LLR + prior</th><th style="width:22%">Posterior <var>P</var></th><th style="width:36%">Decision</th></tr></thead>
+<tbody>
+<tr><td>0.0</td><td>−2.0</td><td>0.119</td><td>INSUFFICIENT_EVIDENCE</td></tr>
+<tr><td>2.0</td><td>0.0</td><td>0.500</td><td>LOW_CONFIDENCE_LINK</td></tr>
+<tr><td>3.73</td><td>1.73</td><td><b>0.850</b></td><td>HIGH_CONFIDENCE_LINK (boundary)</td></tr>
+<tr><td>9.00</td><td>7.00</td><td>0.999</td><td>HIGH_CONFIDENCE_LINK</td></tr>
+<tr><td>−5.0</td><td>−7.0</td><td>0.001</td><td>CONTRADICTION_REJECTED</td></tr>
+</tbody>
+</table>
+
+<h2>3.10 Thresholds and the Decision Layer</h2>
+
+<span class="filepath">packages/attribution/decide.py:106–129</span>
+<pre><code>if contradiction_penalty > 0.0 or final_llr < 0.0:
+    decision = AttributionDecision.CONTRADICTION_REJECTED
+elif posterior_prob >= 0.85:
+    decision = AttributionDecision.HIGH_CONFIDENCE_LINK
+elif posterior_prob >= 0.50:
+    decision = AttributionDecision.LOW_CONFIDENCE_LINK
+else:
+    decision = AttributionDecision.INSUFFICIENT_EVIDENCE</code></pre>
+
+<h4>Why contradictions short-circuit</h4>
+<p>
+The contradiction branch is evaluated <b>first</b>, before any probability
+comparison. If a contradiction fired at all, the outcome is rejection
+regardless of how much supporting evidence accumulated. The check
+<code>contradiction_penalty &gt; 0.0</code> is on the penalty's <em>existence</em>,
+not its magnitude.
+</p>
+
+<h4>Threshold selection is an engineering decision, not a mathematical one</h4>
+<p>
+0.85 and 0.50 are policy choices about the relative cost of the two error types:
+</p>
+<ul>
+<li><b>False positive</b> — two unrelated actors declared the same. In attribution this is an accusation against the wrong party.</li>
+<li><b>False negative</b> — a genuine link missed. The investigation continues by other means.</li>
+</ul>
+<p>
+Because the first is far more costly, the high-confidence bar is set well above
+0.5, and everything between 0.50 and 0.85 is explicitly routed to human review
+rather than being auto-decided.
+</p>
+
+<div class="box warn">
+  <span class="lbl">Verified caveat: two different tier scales exist</span>
+  <p>
+    <code>decide.py</code> uses <b>0.85 / 0.50</b> for the engine decision, but
+    the API's <code>confidence_tier</code> string in <code>main.py</code> uses
+    <b>0.85 / 0.60 / 0.35</b> for display. These are not the same scale. A
+    hypothesis at <var>P</var> = 0.55 is <code>LOW_CONFIDENCE_LINK</code> to the
+    engine but displays as "Low Confidence" only below 0.60 — the label and the
+    decision can disagree in the band 0.50–0.60. This is a genuine
+    inconsistency in the current implementation.
+  </p>
+</div>
+
+
+<!-- ==================================================== VOLUME 4 -->
+<h1 class="vol"><span class="vnum">Volume Four</span>Machine Learning: An Honest Accounting</h1>
+<div class="volrule"></div>
+
+<p class="lead">
+This volume answers the questions a viva examiner asks hardest: what was
+trained, on what data, and what does the model actually learn? The honest
+answer for NETRA-X is more interesting than a fabricated one — and defending
+it correctly is far stronger than claiming a model that does not exist.
+</p>
+
+<div class="box bad">
+  <span class="lbl">The headline finding — state this plainly if asked</span>
+  <p>
+    <b>NETRA-X contains no trained machine-learning model in its live inference
+    path.</b> Verified: no <code>load_state_dict</code>, no <code>torch.load</code>,
+    no <code>joblib.load</code>, and no <code>.pt</code>, <code>.pth</code>,
+    <code>.pkl</code> or <code>.onnx</code> artifact anywhere in the repository.
+  </p>
+  <p>
+    The attribution engine is a <b>statistical inference system with
+    expert-elicited parameters</b> — a Bayesian likelihood-ratio calculator whose
+    <var>m</var>/<var>u</var> priors were authored by hand. Calling it "the ML
+    model" in a viva would be a claim the code does not support.
+  </p>
+</div>
+
+<h2>4.1 Why Not Just Rules? (The Case for a Probabilistic Approach)</h2>
+
+<p>
+Volume 1 §1.4 showed why boolean rules fail. The point deserves restating
+precisely, because it explains what NETRA-X chose <em>instead</em> of ML:
+</p>
+
+<table>
+<thead><tr><th style="width:30%">Requirement</th><th style="width:22%">Rule engine</th><th style="width:24%">Supervised ML</th><th style="width:24%">NETRA-X (Bayesian LR)</th></tr></thead>
+<tbody>
+<tr><td>Weigh evidence by strength</td><td>No</td><td>Yes (learned)</td><td>Yes (elicited priors)</td></tr>
+<tr><td>Accumulate weak signals</td><td>No</td><td>Yes</td><td>Yes (LLR sum)</td></tr>
+<tr><td>Handle correlated evidence</td><td>No</td><td>Partially</td><td>Yes (λ discount)</td></tr>
+<tr><td>Express uncertainty</td><td>No</td><td>Yes</td><td>Yes (posterior)</td></tr>
+<tr><td>Explain a specific decision</td><td>Yes</td><td>Usually poorly</td><td><b>Yes — per-item waterfall</b></td></tr>
+<tr><td>Work with zero labelled data</td><td>Yes</td><td><b>No</b></td><td><b>Yes</b></td></tr>
+<tr><td>Defensible in a legal setting</td><td>Partially</td><td>Difficult</td><td>Yes — auditable arithmetic</td></tr>
+</tbody>
+</table>
+
+<div class="box good">
+  <span class="lbl">The actual engineering argument — memorise this</span>
+  <p>
+    Supervised ML requires labelled training data: thousands of persona pairs
+    with ground truth "same operator / different operator". <b>That dataset does
+    not exist and largely cannot exist</b> — ground truth for dark-web
+    attribution is held by law enforcement, is classified, and arrives only
+    after arrests. Fitting a model to synthetic labels would learn the
+    generator's assumptions, not reality.
+  </p>
+  <p>
+    The Fellegi–Sunter framework was designed for exactly this situation:
+    principled probabilistic linkage when parameters must be elicited rather
+    than learned. Choosing it over a neural network is a <b>correct</b>
+    engineering decision given the data reality, not a compromise.
+  </p>
+</div>
+
+<h2>4.2 What Is Actually Learned — Component by Component</h2>
+
+<table>
+<thead><tr><th style="width:23%">Component</th><th style="width:14%">Status</th><th style="width:63%">What it really does</th></tr></thead>
+<tbody>
+<tr><td><code>mu_table.yaml</code></td><td><span class="badge b-impl">Elicited</span></td><td>11 features + 2 contradictions. Hand-authored <var>m</var>/<var>u</var> priors. <b>Not learned from data.</b></td></tr>
+<tr><td><code>LLRFusionEngine</code></td><td><span class="badge b-impl">Implemented</span></td><td>Deterministic arithmetic. No parameters are fitted; λ = 0.25 and the caps are constants.</td></tr>
+<tr><td><code>IsotonicCalibrator</code></td><td><span class="badge b-partial">Partial</span></td><td>A real fittable model (scikit-learn <code>IsotonicRegression</code>) — but <code>.fit()</code> is called <b>only in <code>bench/report.py</code></b>. The live API path never fits it, so it always falls through to the sigmoid.</td></tr>
+<tr><td>Burrows's Delta</td><td><span class="badge b-impl">Implemented</span></td><td>A classical statistical distance, not a learned model. Deterministic.</td></tr>
+<tr><td><code>NeuralStylometryEncoder</code></td><td><span class="badge b-mock">Untrained</span></td><td>A PyTorch network that is <b>randomly initialised and never trained</b>. See §4.4.</td></tr>
+<tr><td><code>Node2VecGraphEmbedder</code></td><td><span class="badge b-exp">Experimental</span></td><td>Genuinely trains (Adam, backprop) — but from scratch, per request, 3 epochs, on a hardcoded adjacency. Not reachable from the UI.</td></tr>
+<tr><td><code>CandidateGenerator</code></td><td><span class="badge b-notimpl">Not wired</span></td><td>Implemented and tested, but <b>no API endpoint or UI calls it</b>. Only tests import it.</td></tr>
+</tbody>
+</table>
+
+<h2>4.3 The Calibrator — A Real Model That Never Fits in Production</h2>
+
+<p>
+<code>IsotonicCalibrator</code> is the closest thing to genuine supervised ML in
+the repository. Isotonic regression fits a monotonically non-decreasing
+step function mapping scores to probabilities — the standard technique for
+probability calibration.
+</p>
+
+<span class="filepath">packages/attribution/calibration.py:36–66</span>
+<pre><code>def fit(self, llr_scores: List[float], labels: List[int]) -> "IsotonicCalibrator":
+    if len(llr_scores) &lt; 5:
+        self.is_fitted = False          # too few points for a stable curve
+        return self
+    X = np.array(llr_scores, dtype=np.float64)
+    y = np.array(labels,     dtype=np.float64)
+    self.iso_reg = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+    self.iso_reg.fit(X, y)
+    self.is_fitted = True
+    return self
+
+def predict_proba(self, llr_score: float) -> float:
+    if self.is_fitted and self.iso_reg is not None:
+        proba = float(self.iso_reg.predict([llr_score])[0])
+        return max(0.0, min(1.0, proba))
+    else:
+        return sigmoid_llr_to_prob(llr_score, self.prior_odds_log)   # ← always this path live</code></pre>
+
+<h4>The training data, if it were fitted</h4>
+<ul>
+<li><b>Input (<var>X</var>)</b> — one raw LLR score per persona pair</li>
+<li><b>Label (<var>y</var>)</b> — 1 if the same operator, 0 otherwise</li>
+<li><b>Learned function</b> — a monotone map LLR → <var>P</var></li>
+<li><b>Source</b> — <code>bench/synthetic/scenarios.py</code>, generated with <code>seed=42</code></li>
+</ul>
+
+<div class="box warn">
+  <span class="lbl">The gap between benchmark and product</span>
+  <p>
+    <code>bench/report.py:38</code> calls <code>calibrator.fit(train_scores,
+    train_labels)</code>, so the reported metrics reflect a <em>fitted</em>
+    calibrator. The API never fits one. <b>The benchmark therefore does not
+    measure the code path the product runs.</b> The live path always uses the
+    sigmoid with prior −2.0. This should be stated openly if asked.
+  </p>
+</div>
+
+<h2>4.4 The Untrained Neural Encoder</h2>
+
+<p>
+<code>packages/stylometry/neural.py</code> defines a small PyTorch network:
+an embedding layer, two linear layers with LayerNorm and GELU, mean-pooled to a
+128-dimensional vector.
+</p>
+
+<span class="filepath">packages/stylometry/neural.py:21–33 (constructor)</span>
+<pre><code>def __init__(self, vocab_size: int = 10000, embed_dim: int = 64,
+             hidden_dim: int = 128):
+    super().__init__()
+    torch.manual_seed(42)                      # ← weights are FIXED by a seed
+    self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+    self.fc1   = nn.Linear(embed_dim, hidden_dim)
+    self.norm1 = nn.LayerNorm(hidden_dim)
+    self.act   = nn.GELU()
+    self.fc2   = nn.Linear(hidden_dim, hidden_dim)
+    self.norm2 = nn.LayerNorm(hidden_dim)</code></pre>
+
+<span class="filepath">packages/stylometry/neural.py:64–74 (singleton factory)</span>
+<pre><code>def get_neural_encoder() -> NeuralStylometryEncoder:
+    global _NEURAL_ENCODER
+    if _NEURAL_ENCODER is None:
+        encoder = NeuralStylometryEncoder()
+        encoder.eval()          # inference mode — but on RANDOM weights
+        _NEURAL_ENCODER = encoder
+    return _NEURAL_ENCODER</code></pre>
+
+<div class="box bad">
+  <span class="lbl">What this actually is</span>
+  <p>
+    There is no <code>load_state_dict</code>. No checkpoint exists. The weights
+    are whatever <code>torch.manual_seed(42)</code> produces. Calling
+    <code>.eval()</code> only disables dropout and batch-norm updating — it does
+    not make an untrained network trained.
+  </p>
+  <p>
+    Mathematically this is a <b>fixed random projection</b> of character-n-gram
+    indices into 128 dimensions. That is not worthless — random projections
+    approximately preserve distances (the Johnson–Lindenstrauss lemma), so
+    cosine similarity between two such embeddings is a crude proxy for n-gram
+    overlap, and it is deterministic and reproducible. But it has learned
+    <em>nothing</em> about authorship. It is closer to locality-sensitive
+    hashing than to neural stylometry.
+  </p>
+  <p>
+    <b>Correct viva answer:</b> "It is an untrained random projection used as a
+    deterministic embedding placeholder. Training it would require an
+    authorship-labelled corpus such as PAN or VeriDark, which we have not
+    integrated."
+  </p>
+</div>
+
+<h2>4.5 Node2Vec — Real Training, Wrong Lifecycle</h2>
+
+<p>
+<code>packages/attribution/graph_embedding.py</code> genuinely implements
+training: biased random walks, a skip-gram model, Adam optimiser, backward
+passes.
+</p>
+
+<span class="filepath">packages/attribution/graph_embedding.py:171–180</span>
+<pre><code>optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+for _ in range(epochs):
+    optimizer.zero_grad()
+    preds = model(target_tensor, context_tensor)
+    loss = criterion(preds, labels_tensor)
+    loss.backward()
+    optimizer.step()</code></pre>
+
+<p>But the lifecycle is wrong for a production system:</p>
+<ul>
+<li>Training happens <b>inside the request handler</b> (<code>main.py:1549</code>, <code>fit_graph_embeddings(default_adj, embed_dim=64, epochs=3)</code>)</li>
+<li><b>3 epochs</b> — far too few for meaningful convergence</li>
+<li>The adjacency is a <b>hardcoded default</b>, not the live ledger graph</li>
+<li>Embeddings are discarded after the response; nothing is persisted</li>
+<li>The endpoint <code>/api/v1/graph/predict-link</code> is <b>not called by any frontend component</b></li>
+</ul>
+
+<p>
+It is best described as a <b>working demonstration of the technique</b>, not a
+deployed model.
+</p>
+
+<h2>4.6 Stylometry — Classical Statistics, Correctly Applied</h2>
+
+<p>
+The stylometry that <em>is</em> used is classical and sound. Features are
+extracted in <code>packages/stylometry/features.py</code>:
+</p>
+
+<table>
+<thead><tr><th style="width:32%">Feature</th><th style="width:68%">Why it signals authorship</th></tr></thead>
+<tbody>
+<tr><td>Function-word frequencies</td><td>"the", "of", "and" — used unconsciously, topic-independent, hard to fake deliberately</td></tr>
+<tr><td>Character n-grams (3–5)</td><td>Captures spelling habits and morphology below the word level</td></tr>
+<tr><td>Punctuation ratios</td><td>Comma and semicolon habits are highly personal and stable</td></tr>
+<tr><td>Sentence-length distribution</td><td>Rhythm of composition</td></tr>
+</tbody>
+</table>
+
+<h3>Burrows's Delta</h3>
+<div class="eq">
+  Δ = (1/<var>n</var>) Σ<sub><var>i</var></sub> | <var>z</var><sub><var>i</var></sub><sup>(A)</sup> − <var>z</var><sub><var>i</var></sub><sup>(B)</sup> |
+  <span class="lbl">mean absolute difference of z-scored feature frequencies</span>
+</div>
+
+<p>
+Z-scoring against a background corpus is what makes Delta work: it normalises
+each feature by how variable it is across authors generally, so a feature that
+varies wildly between everyone contributes less than one that is usually stable.
+</p>
+
+<span class="filepath">packages/stylometry/verify.py:24–40</span>
+<pre><code>def compute_burrows_delta(vec1, vec2, std_devs=None) -> float:
+    if std_devs is None:
+        delta = float(np.mean(np.abs(vec1 - vec2)))          # unnormalised
+    else:
+        z1 = vec1 / std_devs
+        z2 = vec2 / std_devs
+        delta = float(np.mean(np.abs(z1 - z2)))              # true Delta
+    return delta</code></pre>
+
+<h3>The abstention gate — the most defensible line in the codebase</h3>
+
+<span class="filepath">packages/stylometry/episodes.py:12, 36–37</span>
+<pre><code>MIN_WORD_COUNT_THRESHOLD = 50   # Hard rule: abstain if text &lt; 50 words
+...
+if self.word_count &lt; MIN_WORD_COUNT_THRESHOLD:
+    self.abstain = True</code></pre>
+
+<div class="box good">
+  <span class="lbl">Why this matters more than it looks</span>
+  <p>
+    Stylometric features are frequency estimates. On 20 words, "the" appearing
+    twice versus once swings the estimate by 100% — the variance swamps the
+    signal. Rather than emit a confident-looking number from noise, the system
+    <b>refuses to score</b>. The benchmark confirms a
+    <b>100% short-text abstention rate</b>. Combined with the STYLOMETRY family
+    cap of 3.0, writing style can corroborate but can never carry an
+    attribution alone.
+  </p>
+</div>
+
+<h2>4.7 The Benchmark — Real Numbers and Their Limits</h2>
+
+<p>
+<code>python -m bench.report</code> is reproducible. Executed against the
+current tree:
+</p>
+
+<pre><code>Total Test Cases Evaluated:        30
+Brier Score:                       0.1007
+Expected Calibration Error (ECE):  0.0044   (Target &lt; 0.15  → PASSED)
+False-Attribution Rate (FAR):      0.00%    (Target == 0.0% → PASSED)
+Recall@10:                         100.00%  (Target == 100% → PASSED)
+ROC-AUC Score:                     0.9028   (Target &gt; 0.90  → PASSED)
+Short-Text Abstention Rate:        100.00%</code></pre>
+
+<table>
+<thead><tr><th style="width:20%">Metric</th><th style="width:44%">What it measures</th><th style="width:36%">Interpretation here</th></tr></thead>
+<tbody>
+<tr><td><b>Brier score</b></td><td>Mean squared error of predicted probabilities. Lower is better; 0 is perfect.</td><td>0.1007 — moderate. See the caveat below.</td></tr>
+<tr><td><b>ECE</b></td><td>Gap between stated confidence and observed accuracy. "When it says 80%, is it right 80% of the time?"</td><td>0.0044 — excellent <em>on this data</em>.</td></tr>
+<tr><td><b>FAR</b></td><td>Rate of confident links between truly different actors.</td><td>0.00% — no false attributions in the set.</td></tr>
+<tr><td><b>Recall@10</b></td><td>Fraction of true matches appearing in the top 10 candidates.</td><td>100% — no true pair lost to ranking.</td></tr>
+<tr><td><b>ROC-AUC</b></td><td>Probability a random true pair scores above a random false pair.</td><td>0.9028 — strong separation.</td></tr>
+</tbody>
+</table>
+
+<div class="box bad">
+  <span class="lbl">Three caveats that must accompany any citation of these numbers</span>
+  <p>
+    <b>1 — The data is synthetic and self-generated.</b> All 30 cases come from
+    <code>bench/synthetic/scenarios.py</code> with <code>seed=42</code>. The
+    system is being evaluated on data produced by the same assumptions that
+    built the scorer. This measures internal consistency, <b>not real-world
+    accuracy</b>. No claim about field performance follows from it.
+  </p>
+  <p>
+    <b>2 — Brier is reported but not gated.</b> The exit gate at
+    <code>bench/report.py:94</code> checks only ECE, FAR, Recall@10 and ROC-AUC.
+    Brier (0.1007) is printed but never asserted, so the harness prints
+    "All benchmark quality metrics passed cleanly" while a commonly cited
+    target of &lt; 0.08 is not met.
+  </p>
+  <p>
+    <b>3 — The benchmark fits a calibrator the product does not use</b> (§4.3).
+  </p>
+</div>
+
+<h2>4.8 What a Real Training Pipeline Would Require</h2>
+
+<p>Asked "how would you make this genuinely ML?", the answer is concrete:</p>
+
+<div class="diagram">
+ REAL LABELS        Court records, indictments, confirmed LE attributions.
+   │                Realistically hundreds — not thousands — of pairs.
+   ▼
+ FEATURE VECTORS    One row per persona pair; columns = the 11 signals,
+   │                each present/absent plus its strength.
+   ▼
+ SPLIT              Split by ACTOR, never by pair. Splitting by pair leaks:
+   │                the same actor lands in train and test, inflating scores.
+   ▼
+ FIT m/u            Estimate m_i and u_i empirically instead of eliciting:
+   │                  m_i = P(signal | same)      from positive pairs
+   │                  u_i = P(signal | different) from negative pairs
+   ▼
+ FIT λ              Learn dependence discount per group from observed
+   │                correlation, rather than fixing 0.25 globally.
+   ▼
+ CALIBRATE          Fit isotonic regression on a held-out split — and
+   │                actually load it in the API path.
+   ▼
+ EVALUATE           Brier, ECE, ROC-AUC, FAR on truly held-out actors.
+   ▼
+ VERSION + SHIP     Persist the artifact; record model_version on every
+                    hypothesis (the column already exists).
+</div>
+
+<div class="box">
+  <span class="lbl">Why the current design already anticipates this</span>
+  <p>
+    The <code>hypotheses</code> table already stores <code>model_version</code>
+    and <code>calibration_version</code>. The priors are already isolated in a
+    YAML file rather than embedded in code. Swapping elicited priors for fitted
+    ones requires <b>no change to the fusion engine</b> — only a different
+    <code>mu_table.yaml</code> and a loaded calibrator. That separation is the
+    single best structural decision in the project.
+  </p>
+</div>
+
+<!-- ==================================================== VOLUME 5 -->
+<h1 class="vol"><span class="vnum">Volume Five</span>Similarity, Graph &amp; Attribution Mechanics</h1>
+<div class="volrule"></div>
+
+<h2>5.1 Cosine Similarity</h2>
+
+<h3>What and why</h3>
+<p>
+Cosine similarity measures the angle between two vectors, ignoring their
+lengths. For text, that matters: a 500-word post and a 50-word post by the same
+author have similar feature <em>proportions</em> but very different magnitudes.
+Comparing direction rather than length removes document length from the
+comparison.
+</p>
+
+<div class="eq">
+  cos(θ) = (<b>A</b> · <b>B</b>) / (‖<b>A</b>‖ ‖<b>B</b>‖)
+  <span class="lbl">range [−1, 1]; for non-negative frequency vectors, [0, 1]</span>
+</div>
+
+<ul>
+<li><b>A · B</b> — dot product, Σ<var>a<sub>i</sub>b<sub>i</sub></var>; large when the vectors emphasise the same features</li>
+<li><b>‖A‖</b> — magnitude, √(Σ<var>a<sub>i</sub></var>²); dividing by it normalises away length</li>
+<li><b>1.0</b> = identical direction · <b>0.0</b> = orthogonal (unrelated)</li>
+</ul>
+
+<h4>Worked example</h4>
+<pre><code>A = [0.5, 0.3, 0.2]        B = [0.4, 0.4, 0.2]
+A·B  = 0.20 + 0.12 + 0.04 = 0.36
+‖A‖  = √(0.25+0.09+0.04) = √0.38 = 0.6164
+‖B‖  = √(0.16+0.16+0.04) = √0.36 = 0.6000
+cos  = 0.36 / (0.6164 × 0.6000) = 0.9734   → very similar style</code></pre>
+
+<p>
+<b>NETRA-X usage:</b> <code>compute_cosine_similarity()</code> in
+<code>packages/stylometry/verify.py:13</code>, applied to function-word
+frequency vectors and to neural embeddings.
+</p>
+
+<h2>5.2 The Stylometry Decision Bands</h2>
+
+<span class="filepath">packages/stylometry/verify.py:79–96</span>
+<pre><code>cos_sim    = compute_cosine_similarity(fvec1, fvec2)
+delta_dist = compute_burrows_delta(fvec1, fvec2, std_devs=background_std_devs)
+
+if   cos_sim &gt; 0.85 or delta_dist &lt; 0.75:   # strong same-author signal
+    ...
+elif cos_sim &gt; 0.65 or delta_dist &lt; 0.95:   # moderate signal
+    ...</code></pre>
+
+<p>
+Note the <code>or</code>: either high cosine similarity <em>or</em> low Delta
+distance suffices. The two measures capture overlapping but distinct aspects,
+and requiring both would reject genuine matches where one metric is noisy. The
+resulting evidence item is still capped at 3.0 by the STYLOMETRY family cap.
+</p>
+
+<h2>5.3 Jaccard Similarity and Graph Topology</h2>
+
+<div class="eq">
+  <var>J(A,B)</var> = |<var>N(A)</var> ∩ <var>N(B)</var>| / |<var>N(A)</var> ∪ <var>N(B)</var>|
+  <span class="lbl">neighbour overlap — range [0, 1]</span>
+</div>
+
+<p>
+<var>N(A)</var> is the set of nodes adjacent to <var>A</var>. The intuition is
+social: two personas who interact with the same forums, vendors and services are
+more likely to be one operator than two personas with disjoint circles.
+</p>
+
+<h4>Worked example</h4>
+<pre><code>N(A) = {forum1, vendor2, market3}
+N(B) = {forum1, vendor2, market9}
+∩ = {forum1, vendor2}                     → 2
+∪ = {forum1, vendor2, market3, market9}   → 4
+J = 2/4 = 0.50                            → above the 0.20 threshold</code></pre>
+
+<p>
+<b>NETRA-X usage:</b> <code>CandidateGenerator.graph_topological_similarity()</code>,
+<code>candidate_gen.py:149–166</code>, with
+<code>topological_match = jaccard &gt;= 0.20</code>.
+</p>
+
+<div class="box warn">
+  <span class="lbl">Verified docstring/implementation mismatch</span>
+  <p>
+    <code>multi_modal_candidate_search()</code> documents itself as "combining
+    exact PGP, fuzzy handle, vector similarity, favicon hash, <b>and graph
+    topology</b>." The implementation contains only <b>four</b> steps — PGP,
+    handle, vector, favicon. <b>Graph topology is never invoked</b> in the
+    unified search. The function exists and is tested independently, but the
+    pipeline described in the docstring is not the pipeline that runs.
+  </p>
+</div>
+
+<h2>5.4 Candidate Fusion — Max, Not Weighted Sum</h2>
+
+<div class="box bad">
+  <span class="lbl">Correcting a common assumption</span>
+  <p>
+    Design material describes candidate scoring as a weighted sum,
+    <var>S</var> = <var>w</var>₁<var>S</var><sub>vector</sub> +
+    <var>w</var>₂<var>S</var><sub>graph</sub> + …
+    <b>No such formula exists in the codebase.</b> There are no weights.
+  </p>
+</div>
+
+<span class="filepath">packages/attribution/candidate_gen.py:214–217 (pattern repeats per signal)</span>
+<pre><code>results_by_actor[aid]["matches"].append(m)
+results_by_actor[aid]["max_score"] = max(results_by_actor[aid]["max_score"],
+                                         m["score"])
+...
+ranked.sort(key=lambda x: x["max_score"], reverse=True)</code></pre>
+
+<div class="eq">
+  <var>S</var><sub>candidate</sub> = max(<var>S</var><sub>pgp</sub>, <var>S</var><sub>handle</sub>, <var>S</var><sub>vector</sub>, <var>S</var><sub>favicon</sub>)
+  <span class="lbl">the actual candidate ranking function</span>
+</div>
+
+<p>
+<b>Why max is defensible here:</b> candidate generation is a <em>recall</em>
+stage. Its job is to ensure no true pair is missed before the expensive fusion
+step; precision is fusion's job. A single strong signal is sufficient reason to
+consider a pair, and max guarantees a strong signal is never diluted by absent
+ones — which a weighted average would do.
+</p>
+
+<h2>5.5 SimHash — Near-Duplicate Detection</h2>
+
+<p>
+Cryptographic hashes are designed so one changed bit produces a completely
+different digest. For near-duplicate detection you want the opposite: similar
+documents should produce similar hashes. SimHash provides that.
+</p>
+
+<div class="diagram">
+  1. Tokenise the document.
+  2. Hash each token to 64 bits (MD5, truncated — see clone_detector.py:18).
+  3. For each of the 64 bit positions, keep a running sum:
+        bit is 1 → +1        bit is 0 → −1
+  4. Final fingerprint bit = 1 if the sum is positive, else 0.
+  5. Similarity = 1 − (Hamming distance / 64).
+
+  Changing a few tokens moves only a few of the 64 sums across zero,
+  so the fingerprint changes only slightly.
+</div>
+
+<p>
+<b>NETRA-X usage:</b> <code>SimHashCloneDetector</code> in
+<code>workers/extraction/clone_detector.py</code>. Feeds the
+<code>simhash_clone_95</code> feature (LLR 6.7) when similarity ≥ 95%.
+</p>
+
+<div class="box warn">
+  <span class="lbl">Terminology correction for the pitch deck</span>
+  <p>
+    Presentation material labels this "MinHash (SimHash)". These are
+    <b>different algorithms</b>: MinHash estimates Jaccard similarity over sets;
+    SimHash estimates cosine similarity over weighted features via Hamming
+    distance. <b>MinHash appears nowhere in the repository.</b> The
+    implementation is SimHash, and the slide should say so.
+  </p>
+</div>
+
+<h2>5.6 The Favicon Pivot — The Highest-Value Technique</h2>
+
+<p>
+This is the single most operationally interesting method in the system, because
+it is what actually moves an investigation from anonymous to attributable.
+</p>
+
+<div class="diagram">
+  An operator runs a hidden service. The onion address reveals nothing.
+  But the site serves a favicon.ico — and when they deploy a clearnet
+  mirror or a staging box, they copy the whole web root, favicon included.
+
+     onion service  ──── favicon.ico ────▶  MurmurHash3 = 297738526
+                                                   │
+     clearnet host  ──── favicon.ico ────▶  MurmurHash3 = 297738526
+                                                   │
+                                                   ▼
+                            Shodan query:  http.favicon.hash:297738526
+                                                   │
+                                                   ▼
+                          Real IP address, ASN, hosting provider
+
+  The anonymity of the .onion is intact. The operator's OPERATIONAL
+  SECURITY is what failed — they reused a file.
+</div>
+
+<p>
+MurmurHash3 is used because it is the hash Shodan indexes, making results
+directly queryable against a public dataset. It is non-cryptographic and fast —
+appropriate here, since the goal is a lookup key, not tamper resistance.
+</p>
+
+<p>
+<b>NETRA-X usage:</b> <code>OnionProbeEngine.inspect_favicon()</code> in
+<code>workers/collection/onion_probe.py:16</code>; the
+<code>favicon_mmh3</code> column on <code>onion_services</code>; and the
+<code>/api/v1/graph</code> and infrastructure views, which surface a favicon
+hash shared by more than one service. Feature
+<code>favicon_mmh3_hash</code>, LLR 9.1.
+</p>
+
+<h2>5.7 Financial Analysis — UTXO Co-Spend Clustering</h2>
+
+<p>
+The foundational heuristic of blockchain forensics: <b>if a single Bitcoin
+transaction spends inputs from several addresses, one entity controlled the
+private keys for all of them</b>, because a valid transaction requires signing
+every input.
+</p>
+
+<div class="diagram">
+  Transaction T1:  inputs [addr_A, addr_B] → output [addr_X]
+  Transaction T2:  inputs [addr_B, addr_C] → output [addr_Y]
+
+  T1 ⇒ one entity controls A and B
+  T2 ⇒ one entity controls B and C
+  Transitively ⇒ {A, B, C} is one cluster.
+
+  Implemented as union-find over the input sets in
+  packages/attribution/financial.py.
+</div>
+
+<p>
+Two features draw on this: <code>btc_address_reuse</code> (LLR 11.5) and
+<code>btc_co_input_clustering</code> (LLR 9.1). Critically, both share the
+dependence group <code>wallet_cluster_btc</code>, so the λ discount applies —
+they are one wallet leak, not two.
+</p>
+
+<h3>Monero and the hard abstention</h3>
+<div class="box good">
+  <span class="lbl">The most principled decision in the codebase</span>
+  <p>
+    Monero uses ring signatures, stealth addresses and confidential transactions.
+    The co-spend heuristic <b>does not apply</b> — there is no sound way to
+    cluster XMR addresses by this method. NETRA-X detects XMR addresses and then
+    <b>refuses to score them</b> (<code>xmr_abstain</code>,
+    <code>workers/extraction/extractor.py:35</code>).
+  </p>
+  <p>
+    Applying the Bitcoin heuristic to Monero would produce confident, entirely
+    unfounded links. Choosing to abstain rather than produce a number is exactly
+    the behaviour the whole system is built around — and it is a strong answer
+    to "where does your system refuse to work?"
+  </p>
+</div>
+
+<h2>5.8 Identifier Extraction</h2>
+
+<span class="filepath">workers/extraction/extractor.py:16–22</span>
+<pre><code>PGP_FINGERPRINT_REGEX = re.compile(r"\b(?:[A-Fa-f0-9]{4}\s?){10}\b|\b[A-Fa-f0-9]{40}\b")
+BTC_ADDRESS_REGEX     = re.compile(r"\b(bc1[a-z0-9]{38,59}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b")
+ETH_ADDRESS_REGEX     = re.compile(r"\b0x[a-fA-F0-9]{40}\b")
+XMR_ADDRESS_REGEX     = re.compile(r"\b(4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}|8[0-9AB][1-9A-HJ-NP-Za-km-z]{93})\b")
+ONION_SERVICE_REGEX   = re.compile(r"\b[a-z2-7]{56}\.onion\b", re.IGNORECASE)
+EMAIL_REGEX           = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+HANDLE_REGEX          = re.compile(r"(?:^|\s)@([A-Za-z0-9_]{3,30})\b")</code></pre>
+
+<table>
+<thead><tr><th style="width:20%">Pattern</th><th style="width:80%">Design detail worth defending</th></tr></thead>
+<tbody>
+<tr><td>PGP</td><td>Two alternations: ten space-separated 4-hex groups (display format) or a bare 40-hex string. Both are the same 160-bit value written differently.</td></tr>
+<tr><td>BTC</td><td>Handles bech32 (<code>bc1…</code>) and legacy Base58 (<code>1…</code>/<code>3…</code>). The Base58 class excludes <code>0OIl</code> — characters omitted from the alphabet precisely to avoid visual ambiguity.</td></tr>
+<tr><td>XMR</td><td>Enforces the exact 95-character length. Detected only to trigger abstention.</td></tr>
+<tr><td>Onion</td><td><b>Exactly 56</b> characters from <code>[a-z2-7]</code> — the v3 base32 alphabet. Anything else is not a valid address.</td></tr>
+</tbody>
+</table>
+
+<div class="box warn">
+  <span class="lbl">Known limitation — regex extraction is brittle</span>
+  <p>
+    Regex cannot understand context. <code>ETH_ADDRESS_REGEX</code> matches any
+    40-hex string prefixed <code>0x</code> — including a truncated SHA-1 or a
+    memory address in a pasted stack trace. Nothing validates the EIP-55
+    checksum, and no Base58Check verification is performed on BTC addresses.
+    Both are straightforward improvements that are simply not implemented.
+  </p>
+</div>
+
+<!-- ==================================================== VOLUME 6 -->
+<h1 class="vol"><span class="vnum">Volume Six</span>Technology Decisions and "Why Not X?"</h1>
+<div class="volrule"></div>
+
+<h2>6.1 The Complete Stack</h2>
+
+<table>
+<thead><tr><th style="width:13%">Technology</th><th style="width:16%">What it is</th><th style="width:19%">Why NETRA-X uses it</th><th style="width:18%">Alternatives</th><th style="width:20%">Trade-off accepted</th><th style="width:14%">Status</th></tr></thead>
+<tbody>
+<tr><td><b>Python 3.13</b></td><td>Interpreted language</td><td>Scientific stack (NumPy, scikit-learn, PyTorch) is unmatched; the whole engine is numerical</td><td>Go, Java, Rust</td><td>Slower execution; GIL limits CPU threading</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>FastAPI</b></td><td>Async web framework</td><td>Pydantic validation is native, so the API contract is enforced at the boundary; OpenAPI docs are automatic</td><td>Flask, Django, Express</td><td>Younger ecosystem than Django</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>Pydantic v2</b></td><td>Validation library</td><td>Rejects malformed data at the edge rather than deep in the engine</td><td>marshmallow, attrs</td><td>v1→v2 migration churn</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>SQLAlchemy 2.0</b></td><td>ORM</td><td>Same models run on SQLite and PostgreSQL — dev/prod parity without rewriting queries</td><td>Raw SQL, Tortoise, Peewee</td><td>Abstraction can hide N+1 queries</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>SQLite</b></td><td>Embedded database</td><td><b>The actual default.</b> Zero setup — clone and run, which matters for a demo</td><td>PostgreSQL</td><td>Weak concurrent writes; no native JSON/vector types</td><td><span class="badge b-impl">Default</span></td></tr>
+<tr><td><b>PostgreSQL 16</b></td><td>RDBMS</td><td>Defined in <code>docker-compose.yml</code> for deployment</td><td>MySQL, CockroachDB</td><td>Requires a running server</td><td><span class="badge b-partial">Opt-in</span></td></tr>
+<tr><td><b>Neo4j 5</b></td><td>Graph database</td><td>Multi-hop traversals are natural in Cypher, painful in SQL</td><td>NetworkX, ArangoDB</td><td>Another service to operate; degrades gracefully when absent</td><td><span class="badge b-partial">Optional</span></td></tr>
+<tr><td><b>Next.js 14</b></td><td>React framework</td><td>App Router, file routing, production build pipeline out of the box</td><td>Vite+React, SvelteKit</td><td>Heavier than a plain SPA</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>TypeScript 5</b></td><td>Typed JavaScript</td><td>API response shapes are checked at compile time</td><td>JavaScript</td><td>Build step; type maintenance</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>Cytoscape.js</b></td><td>Graph rendering</td><td>Purpose-built for network visualisation; handles hundreds of nodes with real layout algorithms</td><td>D3, vis.js, Sigma</td><td>Large bundle; imperative API</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>Tailwind CSS</b></td><td>Utility CSS</td><td>Consistent design tokens; no cascade conflicts across 17 components</td><td>CSS Modules, styled-components</td><td>Verbose class strings</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>PyJWT</b></td><td>JWT library</td><td>Stateless auth; no server-side session store</td><td>Sessions, OAuth2</td><td>Tokens cannot be revoked before expiry</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>scikit-learn</b></td><td>ML library</td><td>Only for <code>IsotonicRegression</code> in the calibrator</td><td>SciPy, custom</td><td>Large dependency for one class</td><td><span class="badge b-partial">Partial</span></td></tr>
+<tr><td><b>PyTorch</b></td><td>Deep learning</td><td>Neural stylometry and Node2Vec — both experimental</td><td>TensorFlow, JAX</td><td>Very heavy; <b>optional extra</b></td><td><span class="badge b-exp">Exp</span></td></tr>
+<tr><td><b>NumPy</b></td><td>Numerics</td><td>Vectorised feature maths in stylometry</td><td>Pure Python</td><td>None material</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>ReportLab</b></td><td>PDF generation</td><td>Signed attribution reports</td><td>WeasyPrint, wkhtmltopdf</td><td>Imperative layout API</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>PyYAML</b></td><td>Config parsing</td><td>Reads <code>mu_table.yaml</code> so priors are data, not code</td><td>JSON, TOML</td><td><code>safe_load</code> required</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>Redis</b></td><td>In-memory store</td><td>Event bus in <code>workers/collection/event_bus.py</code></td><td>RabbitMQ, Kafka</td><td>Only used in that one module</td><td><span class="badge b-partial">Minimal</span></td></tr>
+<tr><td><b>MinIO</b></td><td>Object storage</td><td>In <code>docker-compose.yml</code> for artifact blobs</td><td>S3, filesystem</td><td><b>No project code imports it</b></td><td><span class="badge b-planned">Planned</span></td></tr>
+<tr><td><b>Docker</b></td><td>Containerisation</td><td>Reproducible multi-service environment</td><td>Bare metal, Vagrant</td><td>Local resource overhead</td><td><span class="badge b-impl">Impl</span></td></tr>
+<tr><td><b>pgvector</b></td><td>Vector index</td><td>Mentioned in a docstring only</td><td>FAISS, Qdrant</td><td><b>No vector column exists</b></td><td><span class="badge b-notimpl">Not impl</span></td></tr>
+<tr><td><b>GitHub Actions</b></td><td>CI/CD</td><td>Shown on the tech-stack slide</td><td>GitLab CI, Jenkins</td><td><b>No <code>.github/workflows/</code> exists</b></td><td><span class="badge b-notimpl">Not impl</span></td></tr>
+</tbody>
+</table>
+
+<h2>6.2 "Why Not X?" — Defending Every Choice</h2>
+
+<div class="qa"><div class="q">Why Python and not Go or Java?</div><div class="a">
+The system is fundamentally numerical: log-likelihood computation, vector
+similarity, z-scoring, isotonic regression. Python's scientific ecosystem —
+NumPy, scikit-learn, PyTorch — has no equivalent in Go, and matching it in Java
+would mean substantially more code for the same maths. The trade-off is
+execution speed, which is not the bottleneck: the expensive operations are
+database queries and network I/O, and the fusion arithmetic for one hypothesis
+is microseconds. If candidate generation over millions of pairs became the
+bottleneck, that specific stage — not the whole system — would be the
+rewrite candidate.
+</div></div>
+
+<div class="qa"><div class="q">Why not use an LLM to decide attribution?</div><div class="a">
+Three disqualifying reasons. <b>Explainability</b> — an LLM cannot show which
+evidence produced which portion of a score; the evidence waterfall is the
+product's core deliverable and an LLM cannot produce one. <b>Reproducibility</b>
+— the same input must always yield the same score for an audit trail to mean
+anything. <b>Hallucination</b> — a system whose central promise is "never a
+black-box guess" cannot rest on a component that invents plausible text. The
+copilot in <code>packages/copilot/</code> deliberately inverts this: the LLM
+path, when enabled, is given <em>tools</em> and no facts, so every claim must
+come back from a real ledger query, and the deterministic path is the default.
+</div></div>
+
+<div class="qa"><div class="q">Why not a neural network for the whole scoring problem?</div><div class="a">
+No labelled training data exists (§4.1). Beyond that, a neural scorer would
+forfeit the property that makes this system defensible: each evidence item's
+contribution is individually inspectable and independently justifiable. In a
+legal or intelligence context, "the network output 0.91" is not a finding —
+"a PGP fingerprint match contributed 10.0, capped, and a wallet co-spend
+contributed 2.3 after dependence discounting" is.
+</div></div>
+
+<div class="qa"><div class="q">Why SQLite as the default when the slide says PostgreSQL?</div><div class="a">
+Honest answer: developer and demo experience. SQLite requires no server, so
+<code>git clone</code> followed by <code>uvicorn</code> produces a working system.
+SQLAlchemy keeps the models identical, so switching is a <code>DATABASE_URL</code>
+change. The trade-off is real — SQLite serialises writes and lacks native JSON
+and vector types — so production would use PostgreSQL. <b>The slide currently
+overstates the default and should be corrected.</b>
+</div></div>
+
+<div class="qa"><div class="q">Why Bayesian likelihood ratios rather than a weighted score?</div><div class="a">
+A weighted score requires inventing weights with no principled meaning, and its
+output is uninterpretable — "72 points" answers nothing. The likelihood ratio
+has a precise definition: how many times more likely this evidence is under
+"same operator" than under "different operators". It composes correctly under
+independence, it converts to a probability through a single well-understood
+function, and it has an established legal precedent in forensic science
+(the "likelihood ratio framework" used in DNA evidence).
+</div></div>
+
+<div class="qa"><div class="q">Why cap evidence families at all? Isn't discarding information wrong?</div><div class="a">
+The caps exist to prevent one <em>type</em> of evidence from dominating. Twenty
+correlated infrastructure signals should not outweigh independent corroboration
+across families, because they largely reflect a single underlying fact. The
+caps encode the principle that <b>confidence requires diversity of evidence</b>,
+and they enforce it arithmetically rather than relying on an analyst noticing.
+Information is not discarded — every item still appears in the waterfall with
+its scaled contribution shown.
+</div></div>
+
+<div class="qa"><div class="q">Why is candidate generation needed if it isn't even wired up?</div><div class="a">
+Comparing every pair is <var>O</var>(<var>n</var>²). At 14 actors that is 91
+pairs — trivial, which is exactly why it is not wired in yet. At 100,000 actors
+it is 5×10⁹ pairs, which is infeasible. Candidate generation exists so that only
+plausible pairs reach the expensive fusion stage. It is implemented and tested
+but not yet on the request path, because the current data volume does not
+require it. That is a defensible sequencing decision, provided it is stated
+rather than implied otherwise.
+</div></div>
+
+<div class="qa"><div class="q">Why Cytoscape.js rather than D3?</div><div class="a">
+D3 is a general visualisation toolkit — you build a graph renderer with it.
+Cytoscape.js <em>is</em> a graph renderer, with force-directed and concentric
+layouts, node/edge styling, and interaction handling already solved. Since the
+requirement is specifically network visualisation, Cytoscape removes work D3
+would have required. The cost is bundle size and a more imperative API.
+</div></div>
+
+<h2>6.3 Three Alternative Architectures</h2>
+
+<h3>Architecture A — Pure rule engine</h3>
+<p>
+<b>Design:</b> boolean matching rules; any shared identifier creates a link.<br>
+<b>Strengths:</b> trivially explainable, fast, no parameters to justify.<br>
+<b>Fatal weakness:</b> cannot rank, cannot accumulate weak evidence, cannot
+express uncertainty, cannot handle correlation. Would link every persona sharing
+a common handle.
+</p>
+
+<h3>Architecture B — End-to-end supervised ML</h3>
+<p>
+<b>Design:</b> featurise pairs, train a gradient-boosted classifier on labelled
+same/different pairs.<br>
+<b>Strengths:</b> learns real signal weights and feature interactions from data;
+likely the most accurate <em>if</em> data existed.<br>
+<b>Fatal weakness:</b> the labelled dataset does not exist. Additionally,
+per-item attribution of the score is approximate (SHAP) rather than exact, which
+weakens the evidentiary story.
+</p>
+
+<h3>Architecture C — Bayesian evidence fusion with human review <span class="badge b-impl">Selected</span></h3>
+<p>
+<b>Design:</b> elicited <var>m</var>/<var>u</var> priors, LLR fusion with
+dependence discounting and family caps, calibration to a posterior, thresholds,
+mandatory analyst decision.<br>
+<b>Strengths:</b> works with zero labelled data; every contribution is exactly
+attributable; abstention is natural; parameters live in a YAML file and can be
+replaced with fitted values without touching the engine.<br>
+<b>Weaknesses accepted:</b> priors are expert judgement and could be
+miscalibrated; λ and the caps are hand-set; accuracy on real data is unmeasured.
+</p>
+
+<div class="box good">
+  <span class="lbl">Why C was correct</span>
+  <p>
+    Architecture C is the only one that satisfies the actual constraints
+    simultaneously: no training data available, explainability legally
+    required, and abstention operationally mandatory. It also
+    <b>degrades into B</b> — the moment real labels exist, the same engine runs
+    with fitted priors. Choosing C does not foreclose B; choosing B would have
+    required data that does not exist.
+  </p>
+</div>
+
+<!-- ==================================================== VOLUME 7 -->
+<h1 class="vol"><span class="vnum">Volume Seven</span>Security, Testing, Limitations &amp; Production</h1>
+<div class="volrule"></div>
+
+<h2>7.1 Authentication</h2>
+
+<span class="filepath">packages/evidence/auth.py:38–42</span>
+<pre><code>def hash_password(password: str) -> str:
+    salt = os.urandom(16)
+    pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
+    return f"pbkdf2:sha256:100000${salt.hex()}${pwd_hash.hex()}"</code></pre>
+
+<p>
+PBKDF2-HMAC-SHA256 with a random 16-byte salt and 100,000 iterations. The
+iteration count is the point: it makes each guess expensive, so an attacker with
+the hash database still cannot brute-force quickly. The salt ensures identical
+passwords produce different hashes, defeating rainbow tables.
+</p>
+
+<p>
+Tokens are JWTs signed HS256 via PyJWT. Every protected endpoint depends on
+<code>get_current_user</code>, which decodes the token and confirms the user
+still exists.
+</p>
+
+<div class="box bad">
+  <span class="lbl">Verified security gaps — do not claim these are handled</span>
+  <ul>
+    <li><b>Ephemeral secret key.</b> If <code>SECRET_KEY</code> is unset, <code>auth.py:31</code> generates a random key at startup and prints a warning. Every restart invalidates all tokens; multiple replicas cannot validate each other's tokens.</li>
+    <li><b>No token revocation.</b> Stateless JWTs remain valid until expiry. A compromised token cannot be cancelled.</li>
+    <li><b>No rate limiting.</b> The login endpoint accepts unlimited attempts. Brute-force protection does not exist.</li>
+    <li><b>No RBAC enforcement.</b> A <code>role</code> column exists on <code>users</code> and is issued in the token, but <b>no endpoint checks it</b>. Any authenticated user can do anything.</li>
+    <li><b>No MFA.</b> <code>mfa_enabled</code> is stored and returned but never verified during login.</li>
+    <li><b>Seeded credentials.</b> Demo accounts with known passwords are created at startup — acceptable for a demo, unacceptable in production.</li>
+  </ul>
+</div>
+
+<h2>7.2 The Audit Chain</h2>
+
+<p>
+This is the strongest security property in the system and it genuinely works.
+</p>
+
+<div class="eq">
+  entry_hash = SHA256(seq ‖ prev_hash ‖ actor ‖ action ‖ resource ‖ payload_hash ‖ created_at<sub>µs</sub>)
+  <span class="lbl">packages/evidence/audit.py:97–115</span>
+</div>
+
+<div class="diagram">
+  Entry 1                Entry 2                Entry 3
+  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+  │ seq: 1       │      │ seq: 2       │      │ seq: 3       │
+  │ payload      │      │ payload      │      │ payload      │
+  │ payload_hash │      │ payload_hash │      │ payload_hash │
+  │ prev: 000..0 │  ┌──▶│ prev: H1     │  ┌──▶│ prev: H2     │
+  │ entry: H1 ───┼──┘   │ entry: H2 ───┼──┘   │ entry: H3    │
+  └──────────────┘      └──────────────┘      └──────────────┘
+
+  Edit ANY field of Entry 2 → its recomputed entry_hash ≠ H2
+  → Entry 3's prev_hash no longer matches → verification fails at row 2.
+</div>
+
+<h4>Why the design changed — and why it matters</h4>
+<p>
+An earlier version only checked that <code>prev_hash</code> values linked up. It
+never recomputed a hash from stored data, and the payload was discarded after
+hashing. That meant editing <code>action</code>, <code>actor_user_id</code> or
+<code>created_at</code> was <b>undetectable</b>, and there was nothing to audit
+because the payload was gone. Three columns fixed it:
+</p>
+<ul>
+<li><code>seq</code> — monotonic and <b>UNIQUE</b>. Ordering previously depended on <code>created_at</code>, so clock skew could reorder the chain and break verification on correct data. Uniqueness also makes concurrent writers collide loudly instead of silently forking the chain.</li>
+<li><code>payload</code> — retained. You cannot audit what you did not keep, and <code>payload_hash</code> cannot be re-derived without it.</li>
+<li><code>entry_hash</code> — computed over the row's own fields <em>plus</em> <code>prev_hash</code>, so any edited field breaks the chain from that point forward.</li>
+</ul>
+
+<div class="box warn">
+  <span class="lbl">Precise terminology — a likely viva trap</span>
+  <p>
+    This is <b>tamper-evident</b>, not <b>tamper-proof</b>. Anyone with write
+    access to the database can delete rows or rebuild the entire chain from
+    scratch. What they cannot do is alter one historical row and leave the chain
+    verifying. Real tamper-<em>proofing</em> requires external anchoring —
+    publishing periodic root hashes to an append-only third-party log.
+    Presentation material saying "tamper-proof" or "admissible in court"
+    overstates what the code provides.
+  </p>
+</div>
+
+<h2>7.3 Ledger Integrity and Retraction</h2>
+
+<p>
+The ledger claims to be append-only. That claim was previously false: a hard
+<code>DELETE</code> endpoint physically removed <code>Evidence</code> rows while
+the <code>hypothesis_evidence</code> rows citing them remained. The measured
+damage was <b>36 of 69 citations dangling across 13 of 14 hypotheses</b> —
+scores computed from evidence that no longer existed.
+</p>
+
+<p>Deletion is now retraction:</p>
+
+<table>
+<thead><tr><th style="width:30%">Column</th><th style="width:70%">Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>retracted_at</code></td><td>When the item was withdrawn. NULL means active.</td></tr>
+<tr><td><code>retracted_by</code></td><td>Which analyst withdrew it — accountability.</td></tr>
+<tr><td><code>retraction_reason</code></td><td>Why. Recorded in the audit chain alongside the action.</td></tr>
+</tbody>
+</table>
+
+<p>
+<code>packages/evidence/integrity.py</code> provides <code>check()</code>,
+<code>repair()</code>, <code>active_evidence_items()</code> and
+<code>rescore_hypothesis()</code>. Retracted evidence stays visible in the vault,
+struck through, and stops contributing to scores — the difference between
+withdrawing a claim and pretending it was never made.
+</p>
+
+<h2>7.4 Testing</h2>
+
+<p><b>115 tests across 18 files.</b> Full suite runs in roughly 12 seconds.</p>
+
+<table>
+<thead><tr><th style="width:34%">File</th><th style="width:10%">Tests</th><th style="width:56%">Covers</th></tr></thead>
+<tbody>
+<tr><td><code>test_copilot.py</code></td><td>20</td><td>Grounding, abstention, entity resolution, product knowledge</td></tr>
+<tr><td><code>test_backend.py</code></td><td>17</td><td>API endpoints, auth, schema contracts</td></tr>
+<tr><td><code>test_audit_chain_integrity.py</code></td><td>13</td><td>Hash chain, tamper detection, sequence uniqueness</td></tr>
+<tr><td><code>test_fusion.py</code></td><td>7</td><td>LLR computation, λ discounting, family caps</td></tr>
+<tr><td><code>test_ingestion.py</code></td><td>7</td><td>Extraction, lawful basis, XMR abstention</td></tr>
+<tr><td><code>test_ledger_integrity.py</code></td><td>6</td><td>Retraction, dangling citations, rescoring</td></tr>
+<tr><td><code>test_case_identifiers.py</code></td><td>5</td><td>Persistence, dedup, audit trail</td></tr>
+<tr><td><code>test_reporting.py</code>, <code>test_extraction_workers.py</code></td><td>10</td><td>PDF/waterfall formatting, regex extractors</td></tr>
+<tr><td><code>test_candidate_gen.py</code>, <code>test_graph_embedding.py</code>, <code>test_neural_stylometry.py</code>, <code>test_stylometry.py</code>, <code>test_synthetic.py</code></td><td>20</td><td>Similarity functions, embeddings, scenarios</td></tr>
+<tr><td><code>test_review_status.py</code></td><td>3</td><td>ACCEPT → ACCEPTED mapping; no bare verbs as status</td></tr>
+<tr><td><code>test_e2e_hero.py</code></td><td>1</td><td>Full pipeline: login → ingest → score → review → export</td></tr>
+</tbody>
+</table>
+
+<h4>Notable missing coverage</h4>
+<ul>
+<li>No frontend tests at all — no Jest, no React Testing Library, no Playwright specs</li>
+<li>No load or concurrency testing</li>
+<li>No security tests (authz bypass, injection, token forgery)</li>
+<li>No property-based testing of the fusion maths (Hypothesis would suit it well)</li>
+<li>Calibration is evaluated only on synthetic data</li>
+</ul>
+
+<h2>7.5 Limitations — Stated Without Softening</h2>
+
+<h3>Data and evaluation</h3>
+<ul>
+<li><b>Every actor in the database is synthetic.</b> The <code>actors</code> table has an <code>is_synthetic</code> flag and it is true for all seeded rows. The system has never processed a real dark-web corpus.</li>
+<li><b>All metrics are on self-generated data.</b> ROC-AUC 0.9028 measures internal consistency, not field accuracy.</li>
+<li><b>The <var>m</var>/<var>u</var> priors are unvalidated.</b> They are plausible expert judgements. Whether <var>u</var> = 10⁻⁴ is the true coincidence rate for favicon collisions is unknown.</li>
+</ul>
+
+<h3>Method</h3>
+<ul>
+<li><b>λ = 0.25 is uniform.</b> Real dependence structure differs per group; one constant cannot be right everywhere.</li>
+<li><b>Dependence groups are declared, not detected.</b> If an ingestion path assigns the wrong group, correlated evidence is counted as independent and the score inflates silently.</li>
+<li><b>Independence across families is assumed.</b> Infrastructure and content signals are plausibly correlated (a cloned site shares both), and nothing discounts across families.</li>
+<li><b>Regex extraction has no semantic validation</b> — no EIP-55 or Base58Check verification.</li>
+<li><b>Two inconsistent tier scales exist</b> (Volume 3 §3.10).</li>
+</ul>
+
+<h3>Adversarial</h3>
+<ul>
+<li><b>The entire model assumes non-adaptive adversaries.</b> An operator who knows the feature list can defeat it: fresh PGP key per persona, no address reuse, deliberate style variation, distinct favicons.</li>
+<li><b>Deliberate false-flagging is possible.</b> An adversary can copy another actor's favicon or post their wallet address to manufacture a link. Nothing detects planted evidence.</li>
+<li><b>No temporal decay.</b> Infrastructure evidence from three years ago counts the same as evidence from yesterday, though hosting changes constantly.</li>
+</ul>
+
+<h3>Operational</h3>
+<ul>
+<li>No RBAC enforcement, rate limiting, or token revocation (§7.1)</li>
+<li>SQLite serialises writes — unsuitable for concurrent analysts</li>
+<li>No CI: <code>.github/workflows/</code> does not exist</li>
+<li>MinIO and pgvector appear in configuration and docstrings but not in code</li>
+<li>Five endpoints return synthetic data from literals and are unreachable from the UI: <code>financial/utxo-clusters</code>, <code>attribution/waterfall</code>, <code>attribution/evaluate</code>, <code>stylometry/neural</code>, <code>graph/predict-link</code></li>
+</ul>
+
+<h3>Legal and ethical</h3>
+<ul>
+<li><b>Attribution is probabilistic and can be wrong.</b> A 0.92 posterior is not proof.</li>
+<li><b>The output is persona-linkage, not identification of a human being.</b></li>
+<li><b>"Admissible in court" is not a claim this system supports.</b> Admissibility depends on jurisdiction, collection legality, chain of custody and expert testimony — not on a hash chain existing.</li>
+</ul>
+
+<h2>7.6 MVP → Production Gap</h2>
+
+<table>
+<thead><tr><th style="width:26%">Area</th><th style="width:37%">Implemented today</th><th style="width:37%">Required for production</th></tr></thead>
+<tbody>
+<tr><td>Database</td><td>SQLite default</td><td>PostgreSQL with connection pooling, read replicas, migrations (Alembic)</td></tr>
+<tr><td>Ingestion</td><td>Synchronous HTTP endpoint</td><td>Queue-backed workers (Celery/RQ), retries, backpressure, dead-letter handling</td></tr>
+<tr><td>Auth</td><td>JWT + PBKDF2</td><td>RBAC enforcement, MFA verification, token revocation, rate limiting, rotated secrets</td></tr>
+<tr><td>Models</td><td>Elicited priors, unfitted calibrator</td><td>Fitted priors from real labels, persisted calibrator, versioned artifacts, drift monitoring</td></tr>
+<tr><td>Scale</td><td>All-pairs comparison</td><td>Wire candidate generation; blocking/indexing to avoid <var>O</var>(<var>n</var>²)</td></tr>
+<tr><td>Storage</td><td>DB rows only</td><td>MinIO/S3 for raw artifacts with lifecycle and retention policy</td></tr>
+<tr><td>Observability</td><td>Audit chain, <code>print()</code></td><td>Structured logging, metrics (Prometheus), tracing (OpenTelemetry), alerting</td></tr>
+<tr><td>CI/CD</td><td>None</td><td>GitHub Actions: tests, lint, type-check, security scan, build, deploy</td></tr>
+<tr><td>Testing</td><td>115 backend tests</td><td>Frontend tests, load tests, security tests, property-based fusion tests</td></tr>
+<tr><td>Graph</td><td>Optional Neo4j</td><td>Required, with a maintained projection and consistency checks</td></tr>
+<tr><td>Recovery</td><td>None</td><td>Backups, PITR, tested restore, disaster-recovery runbook</td></tr>
+</tbody>
+</table>
+
+<!-- ==================================================== VOLUME 8 -->
+<h1 class="vol"><span class="vnum">Volume Eight</span>Reference: Truth Table, Formulas, Glossary, Viva Bank</h1>
+<div class="volrule"></div>
+
+<h2>8.1 Implementation Truth Table</h2>
+
+<p>
+The mandatory honest inventory. <span class="badge b-impl">Implemented</span>
+works end to end · <span class="badge b-partial">Partial</span> works with
+caveats · <span class="badge b-exp">Experimental</span> runs but is not
+production-shaped · <span class="badge b-mock">Mock</span> looks real but is not
+· <span class="badge b-notimpl">Not impl</span> claimed somewhere but absent.
+</p>
+
+<table>
+<thead><tr><th style="width:24%">Feature</th><th style="width:12%">Status</th><th style="width:26%">File / module</th><th style="width:38%">Notes</th></tr></thead>
+<tbody>
+<tr><td>LLR evidence fusion</td><td><span class="badge b-impl">Impl</span></td><td><code>attribution/fusion.py</code></td><td>Complete: discounting, caps, contradictions, per-item contributions</td></tr>
+<tr><td>Dependence discounting</td><td><span class="badge b-impl">Impl</span></td><td><code>fusion.py:150–162</code></td><td>λ = 0.25, hand-set constant</td></tr>
+<tr><td>Family caps</td><td><span class="badge b-impl">Impl</span></td><td><code>common/types.py:23–31</code></td><td>7 families, proportional rescaling</td></tr>
+<tr><td>Contradiction penalties</td><td><span class="badge b-impl">Impl</span></td><td><code>fusion.py</code>, <code>mu_table.yaml</code></td><td>Uncapped by design; 2 defined</td></tr>
+<tr><td>Sigmoid calibration</td><td><span class="badge b-impl">Impl</span></td><td><code>calibration.py:13</code></td><td>The live path, prior −2.0</td></tr>
+<tr><td>Isotonic calibration</td><td><span class="badge b-partial">Partial</span></td><td><code>calibration.py:36</code></td><td>Implemented; fitted only in <code>bench/</code>, never in the API</td></tr>
+<tr><td>Decision thresholds</td><td><span class="badge b-impl">Impl</span></td><td><code>decide.py:106–129</code></td><td>0.85 / 0.50 + contradiction short-circuit</td></tr>
+<tr><td>SHA-256 audit chain</td><td><span class="badge b-impl">Impl</span></td><td><code>evidence/audit.py</code></td><td>Tamper-<b>evident</b>; verified over 900+ records</td></tr>
+<tr><td>Evidence retraction</td><td><span class="badge b-impl">Impl</span></td><td><code>evidence/integrity.py</code></td><td>Replaced hard delete; rescoring included</td></tr>
+<tr><td>Provenance chain</td><td><span class="badge b-impl">Impl</span></td><td>models + <code>warc_writer.py</code></td><td>source → observation → artifact → evidence</td></tr>
+<tr><td>Identifier extraction</td><td><span class="badge b-impl">Impl</span></td><td><code>extraction/extractor.py</code></td><td>7 regex patterns; no checksum validation</td></tr>
+<tr><td>XMR hard abstention</td><td><span class="badge b-impl">Impl</span></td><td><code>extractor.py:35</code></td><td>Detects then refuses to score</td></tr>
+<tr><td>Stylometry (classical)</td><td><span class="badge b-impl">Impl</span></td><td><code>stylometry/verify.py</code></td><td>Cosine + Burrows's Delta</td></tr>
+<tr><td>Short-text abstention</td><td><span class="badge b-impl">Impl</span></td><td><code>episodes.py:12</code></td><td>&lt; 50 words → abstain; 100% rate in benchmark</td></tr>
+<tr><td>SimHash clone detection</td><td><span class="badge b-impl">Impl</span></td><td><code>clone_detector.py</code></td><td>64-bit, MD5 token hashing</td></tr>
+<tr><td>Favicon MurmurHash3 pivot</td><td><span class="badge b-impl">Impl</span></td><td><code>onion_probe.py:16</code></td><td>Shodan-compatible hash</td></tr>
+<tr><td>UTXO co-spend clustering</td><td><span class="badge b-impl">Impl</span></td><td><code>attribution/financial.py</code></td><td>Union-find over input sets</td></tr>
+<tr><td>Copilot (deterministic)</td><td><span class="badge b-impl">Impl</span></td><td><code>packages/copilot/</code></td><td>16 ledger tools; refuses unknown entities</td></tr>
+<tr><td>Copilot (Claude path)</td><td><span class="badge b-notimpl">Untested</span></td><td><code>copilot/llm.py</code></td><td>Written but never executed — no SDK, no API key present</td></tr>
+<tr><td>STIX 2.1 / PDF / CSV / JSON export</td><td><span class="badge b-impl">Impl</span></td><td><code>stix_export.py</code>, <code>reporting.py</code></td><td>All four verified working</td></tr>
+<tr><td>Graph visualisation</td><td><span class="badge b-impl">Impl</span></td><td><code>GraphExplorer.tsx</code></td><td>21 nodes / 31 edges on seed data</td></tr>
+<tr><td>Neo4j projection</td><td><span class="badge b-partial">Optional</span></td><td><code>graph/projection.py</code></td><td>Degrades gracefully; not running by default</td></tr>
+<tr><td>Node2Vec embeddings</td><td><span class="badge b-exp">Exp</span></td><td><code>graph_embedding.py</code></td><td>Trains per request, 3 epochs, hardcoded adjacency, unreachable from UI</td></tr>
+<tr><td>Neural stylometry</td><td><span class="badge b-mock">Untrained</span></td><td><code>stylometry/neural.py</code></td><td><b>Random weights, never trained.</b> A fixed random projection</td></tr>
+<tr><td>Candidate generation</td><td><span class="badge b-notimpl">Not wired</span></td><td><code>candidate_gen.py</code></td><td>Implemented and tested; no caller outside tests</td></tr>
+<tr><td>pgvector similarity</td><td><span class="badge b-notimpl">Not impl</span></td><td>—</td><td>Docstring mention only; no vector column</td></tr>
+<tr><td>MinHash</td><td><span class="badge b-notimpl">Not impl</span></td><td>—</td><td>On the slide; absent from the repo (SimHash is what exists)</td></tr>
+<tr><td>WARC (ISO 28500)</td><td><span class="badge b-partial">Partial</span></td><td><code>warc_writer.py</code></td><td>Computes SHA-256 over artifacts; <b>does not write WARC files</b></td></tr>
+<tr><td>MinIO object storage</td><td><span class="badge b-planned">Planned</span></td><td><code>docker-compose.yml</code></td><td>No project code imports it</td></tr>
+<tr><td>GitHub Actions CI</td><td><span class="badge b-notimpl">Not impl</span></td><td>—</td><td>On the slide; no <code>.github/workflows/</code></td></tr>
+<tr><td>RBAC enforcement</td><td><span class="badge b-notimpl">Not impl</span></td><td>—</td><td><code>role</code> stored and issued but never checked</td></tr>
+<tr><td>MFA</td><td><span class="badge b-notimpl">Not impl</span></td><td>—</td><td><code>mfa_enabled</code> stored but never verified</td></tr>
+</tbody>
+</table>
+
+<h2>8.2 Source-of-Truth File Map</h2>
+
+<table>
+<thead><tr><th style="width:26%">Concept</th><th style="width:30%">File</th><th style="width:44%">Function / symbol</th></tr></thead>
+<tbody>
+<tr><td>Item LLR from priors</td><td><code>packages/common/types.py</code></td><td><code>EvidenceItem.get_effective_llr()</code> — line 53</td></tr>
+<tr><td>Family caps</td><td><code>packages/common/types.py</code></td><td><code>FAMILY_CAPS</code> — line 23</td></tr>
+<tr><td><var>m</var>/<var>u</var> priors</td><td><code>packages/attribution/mu_table.yaml</code></td><td><code>features:</code>, <code>contradictions:</code></td></tr>
+<tr><td>Fusion + discounting + caps</td><td><code>packages/attribution/fusion.py</code></td><td><code>LLRFusionEngine.fuse_evidence()</code></td></tr>
+<tr><td>LLR → probability</td><td><code>packages/attribution/calibration.py</code></td><td><code>sigmoid_llr_to_prob()</code>, <code>IsotonicCalibrator</code></td></tr>
+<tr><td>Decision thresholds</td><td><code>packages/attribution/decide.py</code></td><td><code>evaluate_attribution()</code> — line 106</td></tr>
+<tr><td>Cosine / Burrows's Delta</td><td><code>packages/stylometry/verify.py</code></td><td><code>compute_cosine_similarity()</code>, <code>compute_burrows_delta()</code></td></tr>
+<tr><td>Abstention threshold</td><td><code>packages/stylometry/episodes.py</code></td><td><code>MIN_WORD_COUNT_THRESHOLD = 50</code></td></tr>
+<tr><td>Jaccard neighbour overlap</td><td><code>packages/attribution/candidate_gen.py</code></td><td><code>graph_topological_similarity()</code> — line 149</td></tr>
+<tr><td>SimHash</td><td><code>workers/extraction/clone_detector.py</code></td><td><code>SimHashCloneDetector.compute_simhash()</code></td></tr>
+<tr><td>Regex extraction</td><td><code>workers/extraction/extractor.py</code></td><td><code>ExtractionEngine</code> — lines 16–22</td></tr>
+<tr><td>Favicon hash</td><td><code>workers/collection/onion_probe.py</code></td><td><code>OnionProbeEngine.inspect_favicon()</code></td></tr>
+<tr><td>UTXO clustering</td><td><code>packages/attribution/financial.py</code></td><td><code>build_utxo_clusters()</code></td></tr>
+<tr><td>Audit chain</td><td><code>packages/evidence/audit.py</code></td><td><code>compute_entry_hash()</code>, <code>verify_audit_chain()</code></td></tr>
+<tr><td>Password hashing / JWT</td><td><code>packages/evidence/auth.py</code></td><td><code>hash_password()</code>, <code>create_access_token()</code></td></tr>
+<tr><td>Ledger integrity</td><td><code>packages/evidence/integrity.py</code></td><td><code>check()</code>, <code>repair()</code>, <code>rescore_hypothesis()</code></td></tr>
+<tr><td>All 38 endpoints</td><td><code>apps/api/main.py</code></td><td><code>@app.get</code> / <code>@app.post</code> decorators</td></tr>
+<tr><td>19 tables</td><td><code>apps/api/database/models.py</code></td><td>SQLAlchemy declarative models</td></tr>
+<tr><td>Benchmark</td><td><code>bench/report.py</code></td><td><code>run_benchmark_eval()</code></td></tr>
+</tbody>
+</table>
+
+<h2>8.3 Formula Sheet</h2>
+
+<table>
+<thead><tr><th style="width:30%">Formula</th><th style="width:26%">Meaning</th><th style="width:16%">Range</th><th style="width:28%">Where used</th></tr></thead>
+<tbody>
+<tr><td><var>P(A|B)</var> = <var>P(A∩B)</var>/<var>P(B)</var></td><td>Conditional probability</td><td>[0,1]</td><td>Conceptual foundation</td></tr>
+<tr><td><var>P(H|E)</var> = <var>P(E|H)P(H)</var>/<var>P(E)</var></td><td>Bayes' theorem</td><td>[0,1]</td><td>Justifies the LR form</td></tr>
+<tr><td>LR = <var>P(E|H₁)</var>/<var>P(E|H₀)</var></td><td>Likelihood ratio</td><td>(0,∞)</td><td>Fellegi–Sunter basis</td></tr>
+<tr><td>LLR = ln(<var>m</var>/<var>u</var>)</td><td>Log-likelihood ratio</td><td>(−∞,∞)</td><td><code>get_effective_llr()</code></td></tr>
+<tr><td>LLR<sub>eff</sub> = ln(<var>m</var>/<var>u</var>)·<var>r</var>·<var>c</var></td><td>Reliability-weighted LLR</td><td>(−∞,∞)</td><td><code>types.py:67</code></td></tr>
+<tr><td>contrib = <var>λ</var>·LLR (non-max in group)</td><td>Dependence discount</td><td><var>λ</var>=0.25</td><td><code>fusion.py:158</code></td></tr>
+<tr><td>scale = cap<sub><var>f</var></sub>/Σcontrib<sub><var>f</var></sub></td><td>Family cap rescaling</td><td>(0,1]</td><td><code>fusion.py:168</code></td></tr>
+<tr><td>LLR<sub>final</sub> = Σmin(Σc<sub><var>f</var></sub>,cap<sub><var>f</var></sub>) − Σ<var>W<sub>c</sub></var></td><td>Complete fusion</td><td>(−∞,∞)</td><td><code>fuse_evidence()</code></td></tr>
+<tr><td><var>P</var> = 1/(1+<var>e</var><sup>−(LLR+prior)</sup>)</td><td>Sigmoid calibration</td><td>(0,1)</td><td><code>calibration.py:13</code></td></tr>
+<tr><td>cos(θ) = <b>A·B</b>/(‖<b>A</b>‖‖<b>B</b>‖)</td><td>Cosine similarity</td><td>[−1,1]</td><td><code>verify.py:13</code></td></tr>
+<tr><td>Δ = (1/<var>n</var>)Σ|<var>z<sub>i</sub></var><sup>A</sup>−<var>z<sub>i</sub></var><sup>B</sup>|</td><td>Burrows's Delta</td><td>[0,∞)</td><td><code>verify.py:24</code></td></tr>
+<tr><td><var>J</var> = |<var>N(A)</var>∩<var>N(B)</var>|/|<var>N(A)</var>∪<var>N(B)</var>|</td><td>Jaccard overlap</td><td>[0,1]</td><td><code>candidate_gen.py:160</code></td></tr>
+<tr><td>sim = 1 − (Hamming/64)</td><td>SimHash similarity</td><td>[0,1]</td><td><code>clone_detector.py:45</code></td></tr>
+<tr><td>entry_hash = SHA256(seq‖prev‖…)</td><td>Audit chain link</td><td>256-bit</td><td><code>audit.py:97</code></td></tr>
+<tr><td><var>S</var> = max(<var>S</var><sub>pgp</sub>,<var>S</var><sub>handle</sub>,<var>S</var><sub>vec</sub>,<var>S</var><sub>fav</sub>)</td><td>Candidate ranking</td><td>[0,1]</td><td><code>candidate_gen.py:245</code></td></tr>
+</tbody>
+</table>
+
+<h2>8.4 Glossary</h2>
+
+<dl class="gloss">
+<dt>Abstention</dt><dd>Deliberately declining to score when evidence is insufficient. In NETRA-X: stylometry below 50 words, and all Monero addresses. Returns exactly 0.0, not a guess.</dd>
+<dt>Attribution</dt><dd>Determining responsibility for activity. NETRA-X performs persona-level attribution (linking identities), not identification of a named human.</dd>
+<dt>Base58</dt><dd>Bitcoin's encoding alphabet, excluding <code>0</code>, <code>O</code>, <code>I</code> and <code>l</code> to prevent visual confusion.</dd>
+<dt>Brier score</dt><dd>Mean squared error of probabilistic predictions. Lower is better. NETRA-X: 0.1007 on synthetic data, reported but not gated.</dd>
+<dt>Burrows's Delta</dt><dd>Authorship distance: mean absolute difference of z-scored function-word frequencies.</dd>
+<dt>Calibration</dt><dd>Making stated confidence match observed accuracy. When a calibrated system says 80%, it is right about 80% of the time.</dd>
+<dt>Candidate generation</dt><dd>Cheaply narrowing which pairs are worth expensive comparison. Avoids <var>O</var>(<var>n</var>²). Implemented but not wired.</dd>
+<dt>Contradiction</dt><dd>Evidence that actively disproves a link. Uncapped and short-circuits the decision.</dd>
+<dt>Dependence group</dt><dd>A label marking evidence items that reflect the same underlying leak. Within a group, only the strongest counts fully.</dd>
+<dt>ECE</dt><dd>Expected Calibration Error — average gap between confidence and accuracy. NETRA-X: 0.0044 on synthetic data.</dd>
+<dt>Evidence family</dt><dd>One of seven categories, each with a cap: EXACT_IDENTITY, FINANCIAL, INFRASTRUCTURE, CONTENT_NLP, STYLOMETRY, TEMPORAL, SEMANTIC_HANDLE.</dd>
+<dt>Fellegi–Sunter</dt><dd>The 1969 probabilistic record-linkage framework using <var>m</var>/<var>u</var> parameters. The theoretical basis of the engine.</dd>
+<dt>Hidden service</dt><dd>A server reachable only through Tor whose location is concealed. Addressed by a 56-character v3 onion address derived from its public key.</dd>
+<dt>LLR</dt><dd>Log-likelihood ratio, ln(<var>m</var>/<var>u</var>). Positive supports the link, negative opposes, zero is uninformative.</dd>
+<dt><var>m</var> / <var>u</var></dt><dd><var>m</var> = <var>P</var>(signal | same operator); <var>u</var> = <var>P</var>(signal | different operators). In NETRA-X these are elicited, not learned.</dd>
+<dt>MurmurHash3</dt><dd>Fast non-cryptographic hash. Used for favicons because Shodan indexes it, enabling clearnet pivots.</dd>
+<dt>Posterior</dt><dd>Probability after weighing evidence — the system's output.</dd>
+<dt>Prior</dt><dd>Belief before evidence. Here <code>prior_odds_log = −2.0</code>, roughly 12%.</dd>
+<dt>Provenance</dt><dd>The recorded history of evidence: origin, time, lawful basis, and integrity proof.</dd>
+<dt>Retraction</dt><dd>Withdrawing evidence while keeping the record. Replaced hard deletion.</dd>
+<dt>ROC-AUC</dt><dd>Probability a random positive outranks a random negative. NETRA-X: 0.9028 on synthetic data.</dd>
+<dt>SimHash</dt><dd>Locality-sensitive hash where similar documents yield similar fingerprints. <b>Not MinHash.</b></dd>
+<dt>STIX 2.1</dt><dd>Structured Threat Information eXpression — the standard interchange format for threat intelligence.</dd>
+<dt>Tamper-evident</dt><dd>Modification is detectable. Distinct from tamper-<em>proof</em>, which prevents modification. NETRA-X is the former.</dd>
+<dt>UTXO</dt><dd>Unspent Transaction Output. Co-spending several UTXOs in one transaction implies common key control.</dd>
+<dt>Waterfall</dt><dd>The per-item breakdown showing how each evidence item contributed to the final score.</dd>
+</dl>
+
+<h2>8.5 Viva Question Bank</h2>
+
+<h3>Fundamentals</h3>
+<div class="qa"><div class="q">What problem does NETRA-X solve?</div><div class="a">It links anonymous dark-web personas that belong to the same operator, using evidence those operators leaked, and attaches a calibrated confidence and a full evidence trail to every link — so an analyst can judge the claim rather than trust it.</div></div>
+<div class="qa"><div class="q">Does NETRA-X break Tor?</div><div class="a">No, and deliberately so. It performs no traffic correlation, runs no relays, and exploits nothing. It works entirely on published or accidentally exposed information — reused keys, reused wallets, copied favicons. This keeps it lawful and its output defensible.</div></div>
+<div class="qa"><div class="q">Why is a rule engine insufficient?</div><div class="a">Four reasons: it treats all evidence as equal, cannot accumulate weak signals, double-counts correlated evidence, and cannot express uncertainty. A shared PGP fingerprint and a shared timezone both produce "link", though one is near-proof and the other is noise.</div></div>
+<div class="qa"><div class="q">What is a v3 onion address?</div><div class="a">Exactly 56 base32 characters (<code>[a-z2-7]</code>) plus <code>.onion</code>, encoding an Ed25519 public key, checksum and version byte. The address <em>is</em> the key, so it cannot be seized from a registrar.</div></div>
+
+<h3>Mathematics</h3>
+<div class="qa"><div class="q">Derive the LLR and explain each term.</div><div class="a">LLR = ln(<var>m</var>/<var>u</var>), where <var>m</var> = <var>P</var>(evidence | same operator) and <var>u</var> = <var>P</var>(evidence | different operators). The ratio form comes from comparing two hypotheses over the same evidence, which cancels <var>P(E)</var> from Bayes' theorem. The logarithm converts multiplication of independent ratios into addition, keeps values numerically stable, and makes supporting evidence positive and opposing evidence negative.</div></div>
+<div class="qa"><div class="q">Why logarithms specifically?</div><div class="a">Three reasons: independent likelihood ratios multiply, and logs make that a sum that can be capped, discounted and explained per item; the PGP ratio alone is ~10⁸ and chaining such values overflows; and logs give a natural zero for uninformative evidence with sign indicating direction.</div></div>
+<div class="qa"><div class="q">What is dependence discounting and why is it necessary?</div><div class="a">Adding LLRs is valid only for independent evidence. A reused wallet address and a co-spending cluster containing it are one leak observed twice. Within a dependence group the strongest item counts fully and each additional item is multiplied by λ = 0.25. Without it, one leak observed five ways would look five times as identifying as it is.</div></div>
+<div class="qa"><div class="q">Why is the prior −2.0?</div><div class="a">It corresponds to prior odds of <var>e</var>⁻² ≈ 0.135, about a 12% prior probability that two arbitrary personas are the same operator. It shifts the sigmoid so zero evidence yields <var>P</var> ≈ 0.12 rather than 0.5 — encoding that most persona pairs are unrelated.</div></div>
+<div class="qa"><div class="q">What LLR is needed for a high-confidence link?</div><div class="a">Posterior ≥ 0.85 with prior −2.0 requires LLR ≈ 3.73. Note the STYLOMETRY cap is 3.0 and TEMPORAL is 2.0 — so neither can reach the threshold alone. Corroboration across families is structurally required.</div></div>
+
+<h3>Machine learning — the hard questions</h3>
+<div class="qa trick"><div class="q">What machine-learning model does NETRA-X use?</div><div class="a"><b>None in the live inference path.</b> The engine is a Bayesian likelihood-ratio calculator with expert-elicited priors. There is no <code>load_state_dict</code>, no <code>torch.load</code>, and no model artifact in the repository. An <code>IsotonicCalibrator</code> exists and can be fitted, but <code>.fit()</code> is called only in <code>bench/report.py</code>, so the API always falls back to the sigmoid.</div></div>
+<div class="qa trick"><div class="q">You have a neural stylometry module. What was it trained on?</div><div class="a">Nothing. <code>NeuralStylometryEncoder</code> is instantiated with <code>torch.manual_seed(42)</code> and no weights are ever loaded. Mathematically it is a fixed random projection of character-n-gram indices into 128 dimensions — closer to locality-sensitive hashing than to trained stylometry. It is deterministic and reproducible, but it has learned nothing about authorship.</div></div>
+<div class="qa"><div class="q">Why not train a model?</div><div class="a">Supervised learning needs labelled pairs with ground truth "same operator". That data is held by law enforcement, is classified, and arrives only after arrests. Fitting to synthetic labels would learn the generator's assumptions rather than reality. Fellegi–Sunter exists precisely for principled linkage when parameters must be elicited rather than learned.</div></div>
+<div class="qa"><div class="q">Where do the m and u values come from?</div><div class="a">Hand-authored in <code>packages/attribution/mu_table.yaml</code> — 11 features and 2 contradictions. They are expert judgements informed by the nature of each identifier (a 160-bit hash essentially never collides; timezones collide constantly). They are unvalidated against real-world frequencies, and the design isolates them in YAML precisely so they can be replaced with fitted values without touching the engine.</div></div>
+<div class="qa trick"><div class="q">Your ROC-AUC is 0.9028. Is the system 90% accurate?</div><div class="a">No, on two counts. ROC-AUC is not accuracy — it is the probability that a random true pair scores above a random false pair. More importantly, it was measured on 30 synthetic cases generated by <code>bench/synthetic/scenarios.py</code> with <code>seed=42</code>. The system is being evaluated on data produced by the same assumptions that built the scorer, so this measures internal consistency, not field accuracy.</div></div>
+<div class="qa trick"><div class="q">The benchmark prints "all metrics passed". Did they?</div><div class="a">The gated metrics passed: ECE 0.0044, FAR 0.00%, Recall@10 100%, ROC-AUC 0.9028. But Brier (0.1007) is printed and never asserted — the exit gate at <code>bench/report.py:94</code> checks only the other four. A commonly cited target of &lt; 0.08 is not met, and the harness still reports success.</div></div>
+
+<h3>Trick questions</h3>
+<div class="qa trick"><div class="q">Is a confidence score of 0.92 a 92% probability the attribution is correct?</div><div class="a"><b>No.</b> It is the output of a sigmoid applied to a summed LLR with a fixed prior of −2.0. It would be a true probability only if the <var>m</var>/<var>u</var> priors were empirically correct, the independence assumptions held, and the calibrator were fitted on representative labelled data. None of those conditions is currently met. It is best described as a <em>calibrated-form confidence score</em> — monotonic and comparable between hypotheses, but not a validated frequency.</div></div>
+<div class="qa trick"><div class="q">Your audit log is tamper-proof, correct?</div><div class="a"><b>Tamper-evident, not tamper-proof.</b> Anyone with database write access can delete rows or rebuild the whole chain. What they cannot do is alter one historical row and have verification still pass. True tamper-proofing needs external anchoring — publishing periodic root hashes to a third-party append-only log.</div></div>
+<div class="qa trick"><div class="q">Is the evidence ledger immutable?</div><div class="a">It is append-only by policy and now enforced. Originally <code>is_immutable</code> was decorative — nothing read it — while a hard DELETE endpoint removed rows, leaving 36 of 69 citations dangling across 13 of 14 hypotheses. Deletion is now retraction: the row stays, is marked withdrawn with reason and actor, stops counting toward scores, and affected hypotheses are rescored.</div></div>
+<div class="qa trick"><div class="q">The slide says MinHash. Where is it?</div><div class="a">It is not in the repository. The implementation is <b>SimHash</b> in <code>workers/extraction/clone_detector.py</code>. They are different algorithms: MinHash estimates Jaccard similarity over sets; SimHash estimates cosine similarity over weighted features via Hamming distance. The slide is wrong and should be corrected.</div></div>
+<div class="qa trick"><div class="q">Your candidate scoring uses weighted signal fusion — what are the weights?</div><div class="a">There are none. <code>multi_modal_candidate_search()</code> takes the <b>maximum</b> across signals, not a weighted sum. That is defensible for a recall stage — one strong signal is sufficient reason to consider a pair, and max prevents dilution by absent signals — but it is not the weighted formula design documents describe. The docstring also claims graph topology is included; the implementation has only four steps and never calls it.</div></div>
+<div class="qa trick"><div class="q">Which database does the system run on?</div><div class="a">SQLite by default — <code>DEFAULT_DB_URL_SYNC = "sqlite:///./netrax.db"</code>. PostgreSQL 16 is defined in <code>docker-compose.yml</code> and selected by setting <code>DATABASE_URL</code>, but no default path uses it. The architecture slide showing PostgreSQL overstates the default.</div></div>
+<div class="qa trick"><div class="q">Can this evidence be used in court?</div><div class="a">Not as it stands, and the system should not claim so. Admissibility depends on jurisdiction, collection legality, chain of custody and expert testimony — not on a hash chain existing. What the system provides is a defensible, reproducible, fully traceable analytical product suitable as an investigative lead.</div></div>
+
+<h3>Architecture and engineering</h3>
+<div class="qa"><div class="q">Why are contradictions uncapped when support is capped?</div><div class="a">Deliberate ethical asymmetry. A false positive is an accusation against the wrong party; a false negative merely continues an investigation. A −20 penalty can therefore overwhelm any accumulated support, so the system fails toward silence.</div></div>
+<div class="qa"><div class="q">Why does the review endpoint map ACCEPT to ACCEPTED?</div><div class="a">A decision is a verb the analyst performs; a status is the state it leaves behind. Assigning the verb directly to <code>Hypothesis.status</code> put rows in state "ACCEPT", which no filter tab and no badge colour matched — an accepted hypothesis vanished from its own tab. The review row keeps the verb; only the state is mapped.</div></div>
+<div class="qa"><div class="q">What happens to a score when evidence is retracted?</div><div class="a"><code>rescore_hypothesis()</code> recomputes the LLR by summing only surviving contributions and re-derives the posterior. Stored per-item contributions are reused rather than re-running fusion, because they are already the engine's post-discount, post-cap output. A hypothesis an analyst already ruled on does not silently revert to the queue.</div></div>
+<div class="qa"><div class="q">Why is torch an optional dependency?</div><div class="a">It is very heavy and only two experimental modules need it. Importing it at package <code>__init__</code> level breaks every environment without it — including deployment — even for code paths that never touch it. <code>packages/attribution/__init__.py</code> and <code>packages/stylometry/__init__.py</code> guard the imports and substitute stubs that raise clearly if called.</div></div>
+<div class="qa"><div class="q">How does the copilot avoid hallucinating?</div><div class="a">The deterministic path composes answers only from ledger query results and refuses when nothing matches. The optional Claude path receives <em>tools and no facts</em>, so every claim must come back from a real database call, and the system prompt requires abstention. Note the Claude path is written but untested — no SDK or key is present in this environment.</div></div>
+
+<h3>Limitations</h3>
+<div class="qa"><div class="q">How would an informed adversary defeat this?</div><div class="a">Easily, and this is the honest headline limitation. Generate a fresh PGP key per persona; never reuse a wallet address; vary writing style or use a translator; serve distinct favicons and certificates per host; post outside a consistent schedule. The model assumes non-adaptive adversaries who make operational mistakes. It also cannot detect deliberately planted false evidence — copying a rival's favicon to manufacture a link.</div></div>
+<div class="qa"><div class="q">What is the biggest weakness of the mathematics?</div><div class="a">The independence assumption across families. Dependence discounting handles correlation <em>within</em> a group, but nothing discounts <em>across</em> families — and infrastructure and content signals are plausibly correlated, since a cloned site shares both. Scores may therefore be systematically inflated for cloned-infrastructure cases.</div></div>
+<div class="qa"><div class="q">What would you fix first with more time?</div><div class="a">Wire the isotonic calibrator into the live path and fit it on real labels, since the product currently ships an uncalibrated sigmoid while the benchmark measures a calibrated one. Second, add checksum validation to the extractors. Third, enforce RBAC — the role is stored and issued but never checked.</div></div>
+
+<h2>8.6 Rapid Revision</h2>
+
+<h3>NETRA-X in five minutes</h3>
+<p>
+NETRA-X links dark-web personas belonging to the same operator. It does not
+attack Tor; it reasons about mistakes operators already made — reused PGP keys,
+reused wallets, copied favicons, consistent writing style. Each shared signal
+becomes a log-likelihood ratio, ln(<var>m</var>/<var>u</var>), read from a
+hand-authored prior table. Correlated evidence within a dependence group is
+discounted by λ = 0.25. Each evidence family is capped, so no single kind of
+evidence can carry an attribution alone. Contradictions are uncapped and reject
+outright. The summed LLR passes through a sigmoid with prior −2.0 to a
+posterior; ≥ 0.85 is high confidence, ≥ 0.50 low, below that insufficient. A
+human analyst makes every final decision, and every action is written to a
+SHA-256 hash-chained audit log.
+</p>
+
+<h3>Fifty things to remember</h3>
+<table>
+<thead><tr><th style="width:50%">Fact</th><th style="width:50%">Fact</th></tr></thead>
+<tbody>
+<tr><td>1. LLR = ln(<var>m</var>/<var>u</var>)</td><td>26. 19 database tables</td></tr>
+<tr><td>2. <var>m</var> = P(signal | same operator)</td><td>27. 38 REST endpoints</td></tr>
+<tr><td>3. <var>u</var> = P(signal | different)</td><td>28. 115 tests, ~12s runtime</td></tr>
+<tr><td>4. λ = 0.25 dependence discount</td><td>29. 12,073 LOC Python</td></tr>
+<tr><td>5. Strongest in group counts fully</td><td>30. 4,868 LOC TypeScript</td></tr>
+<tr><td>6. EXACT_IDENTITY cap 10.0</td><td>31. Fellegi–Sunter, 1969</td></tr>
+<tr><td>7. FINANCIAL cap 7.5</td><td>32. SQLite is the default DB</td></tr>
+<tr><td>8. INFRASTRUCTURE cap 5.0</td><td>33. PostgreSQL is opt-in</td></tr>
+<tr><td>9. CONTENT_NLP cap 5.0</td><td>34. Neo4j optional, degrades</td></tr>
+<tr><td>10. STYLOMETRY cap 3.0</td><td>35. No trained model in the live path</td></tr>
+<tr><td>11. TEMPORAL cap 2.0</td><td>36. Neural encoder is untrained</td></tr>
+<tr><td>12. SEMANTIC_HANDLE cap 2.0</td><td>37. Isotonic fitted only in bench</td></tr>
+<tr><td>13. Contradictions are uncapped</td><td>38. Candidate gen not wired</td></tr>
+<tr><td>14. pgp_key_conflict = −20</td><td>39. SimHash, not MinHash</td></tr>
+<tr><td>15. temporal_impossible = −15</td><td>40. No pgvector column exists</td></tr>
+<tr><td>16. Prior log-odds = −2.0</td><td>41. No GitHub Actions workflow</td></tr>
+<tr><td>17. P ≥ 0.85 → HIGH</td><td>42. RBAC stored but not enforced</td></tr>
+<tr><td>18. P ≥ 0.50 → LOW</td><td>43. Tamper-evident, not tamper-proof</td></tr>
+<tr><td>19. Contradiction short-circuits</td><td>44. Retraction replaced deletion</td></tr>
+<tr><td>20. PGP fingerprint LLR = 18.4</td><td>45. Brier 0.1007, not gated</td></tr>
+<tr><td>21. Timezone LLR = 1.9</td><td>46. ROC-AUC 0.9028 on synthetic data</td></tr>
+<tr><td>22. Stylometry abstains &lt; 50 words</td><td>47. ECE 0.0044, FAR 0.00%</td></tr>
+<tr><td>23. XMR always abstains</td><td>48. 100% short-text abstention</td></tr>
+<tr><td>24. Onion address = exactly 56 chars</td><td>49. All seed actors are synthetic</td></tr>
+<tr><td>25. Favicon hash = MurmurHash3</td><td>50. Human decides, machine proposes</td></tr>
+</tbody>
+</table>
+
+<div class="box good" style="margin-top:8mm">
+  <span class="lbl">The single most important thing to say in a viva</span>
+  <p>
+    NETRA-X is not a system that decides who someone is. It is a system that
+    makes the evidence for a claim <b>legible, weighted and reviewable</b> — and
+    that refuses to answer when the evidence does not support one. Every number
+    it displays traces to a row, every row traces to a hashed artifact, and
+    every conclusion requires a human to sign it. Where the system is weak, this
+    document says so, because a project that knows its own limitations is more
+    credible than one that claims none.
+  </p>
+</div>
+
+</body>
+</html>
