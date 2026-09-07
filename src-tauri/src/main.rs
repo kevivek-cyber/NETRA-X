@@ -77,7 +77,8 @@ fn main() {
         .run(|app_handle, event| {
             if let RunEvent::Exit = event {
                 let state = app_handle.state::<ApiProcess>();
-                if let Some(mut child) = state.0.lock().unwrap().take() {
+                let mut guard = state.0.lock().unwrap();
+                if let Some(mut child) = guard.take() {
                     let _ = child.kill();
                 }
             }
