@@ -97,3 +97,8 @@ netra-x/
 5. **Open Browser**:
    - Web UI: `http://localhost:3000`
    - **Login**: `analyst@netra-x.local` / `AnalystPass2026!`
+
+### Packaged Desktop App (fully local, no Docker/cloud)
+
+For a local-first Windows app that starts the API and UI for you and stores
+its database under your user profile, see **[DESKTOP.md](DESKTOP.md)**.

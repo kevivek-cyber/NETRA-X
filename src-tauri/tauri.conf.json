@@ -1,0 +1,57 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev --prefix apps/web",
+    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1",
+    "devPath": "http://localhost:3000",
+    "distDir": "../apps/web/out",
+    "withGlobalTauri": false
+  },
+  "package": {
+    "productName": "NETRA-X",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "identifier": "in.gov.ntro.netra-x.desktop",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "resources": [
+        "resources/pyembed/**/*",
+        "resources/app/**/*"
+      ],
+      "targets": ["nsis", "msi"],
+      "windows": {
+        "webviewInstallMode": {
+          "type": "downloadBootstrapper"
+        }
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "title": "NETRA-X — Threat Actor Intelligence & Attribution",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  }
+}
