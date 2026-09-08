@@ -35,6 +35,7 @@ import { ReviewQueue } from "./ReviewQueue";
 import { ThreatGlobe } from "./viz/ThreatGlobe";
 import { Sparkline } from "./viz/Sparkline";
 import { ScrambleText } from "./viz/TextFX";
+import { ActivityFeed } from "./viz/ActivityFeed";
 
 interface CommandCenterProps {
   onNavigate: (view: string, targetId?: string) => void;
@@ -57,7 +58,7 @@ function StatBlock({
 }) {
   const shown = useCountUp(loading ? null : value);
   return (
-    <div className={`relative bg-netra-card border border-netra-border p-4 overflow-hidden boot-in ${delay}`}>
+    <div className={`crosshair-hover relative bg-netra-card border border-netra-border p-4 overflow-hidden boot-in ${delay}`}>
       <div className="flex items-start justify-between mb-3">
         <span className="telemetry-label">{label}</span>
         <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} />
@@ -217,7 +218,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           className="absolute -right-12 -top-20 opacity-70 pointer-events-none hidden lg:block"
           aria-hidden="true"
         >
-          <ThreatGlobe size={460} arcCount={7} />
+          <ThreatGlobe size={460} arcCount={7} interactive={false} />
         </div>
 
         <div className="relative p-5 space-y-5">
@@ -293,12 +294,12 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={placeholder}
                 aria-label="Seed identifier"
-                className="flex-1 min-w-0 bg-netra-surface h-11 px-2 font-mono text-xs text-netra-text placeholder-netra-subtle focus:outline-none focus:bg-netra-hover transition-colors"
+                className="focus-rule flex-1 min-w-0 bg-netra-surface h-11 px-2 font-mono text-xs text-netra-text placeholder-netra-subtle focus:outline-none focus:bg-netra-hover transition-colors"
               />
               <button
                 type="submit"
                 disabled={isInvestigating || !searchQuery.trim()}
-                className="px-5 bg-netra-purple text-netra-bg font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center gap-2 hover:bg-netra-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                className="key-press px-5 bg-netra-purple text-netra-bg font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center gap-2 hover:bg-netra-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
               >
                 {isInvestigating ? (
                   <>
@@ -325,7 +326,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                       <button
                         key={idx}
                         onClick={() => onNavigate("actors", res.entity_id)}
-                        className="row-live bg-netra-surface border border-transparent p-3 text-left hover:bg-netra-hover transition-colors"
+                        className="crosshair-hover row-live bg-netra-surface border border-transparent p-3 text-left hover:bg-netra-hover transition-colors"
                       >
                         <div className="flex items-baseline justify-between gap-2 mb-1">
                           <span className="text-xs font-semibold text-netra-text truncate">
@@ -441,7 +442,14 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           />
         </div>
 
-        <div className="space-y-5 min-w-0">
+        {/* The queue can run to dozens of hypotheses, and scrolling it used to
+            leave this column as a tall empty gutter. Pinning it keeps the
+            engine constants and the live audit tail on screen while the
+            analyst works down the queue -- which is when they are most likely
+            to want them. `self-start` is required: a stretched grid item is
+            already the full column height and would have nothing to stick
+            against. */}
+        <div className="space-y-5 min-w-0 xl:sticky xl:top-0 xl:self-start">
           {/* Engine readout -- real constants from /api/v1/config/engine. */}
           <section className="border border-netra-border bg-netra-card boot-in boot-in-2">
             <header className="flex items-center gap-2 border-b border-netra-border px-4 h-10">
@@ -513,6 +521,10 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
               </dl>
             </div>
           </section>
+
+          {/* Live tail of the append-only chain. Real rows, or an explicit
+              "no audit events" -- never filler traffic. */}
+          <ActivityFeed className="boot-in boot-in-3" />
         </div>
       </div>
     </div>

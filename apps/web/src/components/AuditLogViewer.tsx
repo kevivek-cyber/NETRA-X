@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Lock, ShieldCheck, Hash, AlertTriangle } from "lucide-react";
 import { ModuleHeader } from "./ModuleHeader";
 import { apiFetch } from "../lib/api";
+import { SkeletonTable } from "./viz/Skeleton";
 
 export const AuditLogViewer: React.FC = () => {
   const [auditData, setAuditData] = useState<any>(null);
@@ -55,7 +56,7 @@ export const AuditLogViewer: React.FC = () => {
       {/* Audit Log Table */}
       <div className="bg-netra-card border border-netra-border rounded-xl p-5 space-y-4">
         {loading ? (
-          <div className="p-8 text-netra-muted text-sm font-mono animate-pulse">Verifying SHA-256 Hash Chain...</div>
+          <SkeletonTable rows={10} cols={["18%", "18%", "22%", "22%", "20%"]} label="Verifying SHA-256 hash chain" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-mono">

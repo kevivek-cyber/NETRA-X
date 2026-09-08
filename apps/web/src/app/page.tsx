@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { apiFetch, getAuthToken, setAuthToken } from "../lib/api";
 import { LoginScreen } from "../components/LoginScreen";
 import { AppShell } from "../components/AppShell";
+import { BootSequence } from "../components/BootSequence";
 import { CommandCenter } from "../components/CommandCenter";
 import { ActorProfile } from "../components/ActorProfile";
 import { AttributionLab } from "../components/AttributionLab";
@@ -25,6 +26,13 @@ export default function Home() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isIngestionModalOpen, setIsIngestionModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  /**
+   * The preflight runs after a fresh sign-in only. Restoring an existing
+   * session goes straight to the console -- an analyst who reloads the window
+   * mid-investigation should not be made to watch a boot screen, and the
+   * checks it performs are already surfaced live in the header.
+   */
+  const [booting, setBooting] = useState(false);
 
   useEffect(() => {
     async function checkSession() {
@@ -45,6 +53,11 @@ export default function Home() {
     }
     checkSession();
   }, []);
+
+  const handleLoginSuccess = (u: any) => {
+    setUser(u);
+    setBooting(true);
+  };
 
   const handleNavigate = (view: string, targetId?: string) => {
     setCurrentView(view);
@@ -82,7 +95,13 @@ export default function Home() {
   }
 
   if (!user) {
-    return <LoginScreen onLoginSuccess={(u) => setUser(u)} />;
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (booting) {
+    return (
+      <BootSequence operator={user.email} onComplete={() => setBooting(false)} />
+    );
   }
 
   return (

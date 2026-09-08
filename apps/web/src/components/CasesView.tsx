@@ -5,6 +5,7 @@ import { FileSearch, Plus, ShieldCheck, Users, Calendar, Trash2, Archive, Key, T
 import { ModuleHeader } from "./ModuleHeader";
 import { useToast } from "./StatusToasts";
 import { apiFetch } from "../lib/api";
+import { SkeletonPanel } from "./viz/Skeleton";
 
 export const CasesView: React.FC = () => {
   const toast = useToast();
@@ -121,7 +122,10 @@ export const CasesView: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-4">
         {loading ? (
-          <div className="p-8 text-netra-muted text-sm font-mono animate-pulse col-span-2">Loading Investigation Cases...</div>
+          <>
+            <SkeletonPanel lines={4} label="Loading investigation cases" />
+            <SkeletonPanel lines={4} />
+          </>
         ) : (
           cases.map((c) => (
             <div key={c.id} className="bg-netra-card border border-netra-border hover:border-netra-purple/50 rounded-xl p-5 space-y-3 transition glass-panel">

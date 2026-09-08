@@ -536,3 +536,134 @@ body::before {
 }
 .nav-item[data-active="true"]::before { transform: scaleY(1); }
 .nav-item:hover::before { transform: scaleY(0.45); }
+
+/* ==========================================================================
+   LOADING & ARRIVAL
+   ========================================================================== */
+
+/* --- SKELETON SHIMMER --------------------------------------------------
+   Communicates: this region is waiting on the network. A background-position
+   sweep, not an opacity pulse -- blinking already means "live" elsewhere in
+   this system, and a loading state must not borrow that signal. */
+@keyframes skeleton-sweep {
+  0%   { background-position: -180% 0; }
+  100% { background-position: 180% 0; }
+}
+.skeleton-shimmer {
+  background-color: #1C1C1C;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(53, 194, 232, 0.10) 45%,
+    rgba(53, 194, 232, 0.16) 50%,
+    rgba(53, 194, 232, 0.10) 55%,
+    transparent 100%
+  );
+  background-size: 180% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.5s ease-in-out infinite;
+}
+/* Offsets so a grid of placeholders resolves in a wave rather than in lockstep,
+   which is how the real rows actually paint. */
+.skel-delay-0 { animation-delay: 0ms; }
+.skel-delay-1 { animation-delay: 90ms; }
+.skel-delay-2 { animation-delay: 180ms; }
+.skel-delay-3 { animation-delay: 270ms; }
+.skel-delay-4 { animation-delay: 360ms; }
+.skel-delay-5 { animation-delay: 450ms; }
+
+/* --- ROW ARRIVAL -------------------------------------------------------
+   Communicates: this specific row is new since the last poll. Fires once per
+   row, and only for rows that genuinely just appeared. */
+@keyframes row-arrive {
+  0%   { background-color: rgba(53, 194, 232, 0.20); transform: translateX(-3px); }
+  100% { background-color: transparent; transform: translateX(0); }
+}
+.row-arrive { animation: row-arrive 1.6s ease-out both; }
+
+/* ==========================================================================
+   INTERACTION FEEDBACK
+   Motion the operator causes, as opposed to motion the system emits.
+   ========================================================================== */
+
+/* --- KEY / BUTTON PRESS ------------------------------------------------
+   Mechanical travel. A 1px drop with the shadow collapsing reads as a physical
+   key bottoming out; a scale transform would read as a web button. */
+.key-press {
+  box-shadow: 2px 2px 0 0 #000;
+  transition: transform 90ms ease, box-shadow 90ms ease, background-color 140ms ease, color 140ms ease;
+}
+.key-press:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 0 #000;
+}
+
+/* --- FOCUS SWEEP -------------------------------------------------------
+   Communicates: this input is now taking keystrokes. One pass along the
+   bottom rule when focus lands. */
+@keyframes focus-sweep { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.focus-rule { position: relative; }
+.focus-rule::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.focus-rule:focus-within::after { animation: focus-sweep 220ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+
+/* --- HOVER CROSSHAIRS --------------------------------------------------
+   Corner registration marks that appear on hover. Framing the target rather
+   than lifting it -- consistent with the 90-degree rule, where a card that
+   floats on hover would not be. */
+.crosshair-hover { position: relative; }
+.crosshair-hover::before,
+.crosshair-hover::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  opacity: 0;
+  transition: opacity 140ms linear;
+  pointer-events: none;
+}
+.crosshair-hover::before {
+  top: -1px; left: -1px;
+  border-top: 1px solid var(--accent);
+  border-left: 1px solid var(--accent);
+}
+.crosshair-hover::after {
+  bottom: -1px; right: -1px;
+  border-bottom: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+}
+.crosshair-hover:hover::before,
+.crosshair-hover:hover::after { opacity: 1; }
+
+/* --- TEXT DECODE ON HOVER ----------------------------------------------
+   A cheap CSS-only cousin of ScrambleText for labels that are not worth a
+   React state machine: the label slides up and a monospace echo takes its
+   place, suggesting the value being re-read. */
+.decode-hover { position: relative; display: inline-block; overflow: hidden; }
+.decode-hover > span { display: block; transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.decode-hover:hover > span { transform: translateY(-100%); }
+.decode-hover > span[data-echo] {
+  position: absolute;
+  inset: 0;
+  transform: translateY(100%);
+  color: var(--accent);
+}
+.decode-hover:hover > span[data-echo] { transform: translateY(0); }
+
+/* Screen-reader-only, for the labels on loading regions. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

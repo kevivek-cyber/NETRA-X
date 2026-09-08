@@ -8,6 +8,7 @@ import {
 import { useToast } from "./StatusToasts";
 import { apiFetch, downloadReportPdf } from "../lib/api";
 import { EvidenceWaterfall } from "./EvidenceWaterfall";
+import { SkeletonPanel, SkeletonTiles } from "./viz/Skeleton";
 
 interface AttributionLabProps {
   hypothesisId?: string;
@@ -49,7 +50,13 @@ export const AttributionLab: React.FC<AttributionLabProps> = ({
   }, [hypothesisId]);
 
   if (!hypothesis) {
-    return <div className="p-8 text-netra-muted text-sm font-mono animate-pulse">Loading Attribution Intelligence Lab...</div>;
+    return (
+      <div className="space-y-5">
+        <SkeletonPanel lines={3} label="Loading attribution lab" />
+        <SkeletonTiles count={4} />
+        <SkeletonPanel lines={7} />
+      </div>
+    );
   }
 
   const handleDecision = async (decision: "ACCEPT" | "REJECT" | "INSUFFICIENT") => {

@@ -245,7 +245,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           {onOpenIngestionModal && (
             <button
               onClick={onOpenIngestionModal}
-              className="group m-3 h-10 bg-netra-purple text-netra-bg font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center justify-center gap-2 hover:bg-netra-text transition-colors shrink-0"
+              className="key-press group m-3 h-10 bg-netra-purple text-netra-bg font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center justify-center gap-2 hover:bg-netra-text transition-colors shrink-0"
             >
               <Globe className="w-3.5 h-3.5" />
               <span>Crawl .onion</span>

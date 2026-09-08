@@ -20,7 +20,7 @@
  * what keeps the wireframe reading as a solid object.
  */
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 type Vec3 = { x: number; y: number; z: number };
 
@@ -40,6 +40,12 @@ interface ThreatGlobeProps {
   /** Rendered size in CSS pixels. Canvas is scaled by devicePixelRatio. */
   size?: number;
   className?: string;
+  /**
+   * Allow drag-to-rotate and node hover. Off for globes used purely as
+   * backdrop, where a cursor change would imply an affordance that leads
+   * nowhere and would steal drags from the content sitting on top.
+   */
+  interactive?: boolean;
 }
 
 /* Real exit-node / bulletproof-hosting concentrations, so the marker
@@ -131,9 +137,12 @@ export const ThreatGlobe: React.FC<ThreatGlobeProps> = ({
   arcCount = 7,
   size = 420,
   className = "",
+  interactive = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<number>(0);
+  const [hovered, setHovered] = useState<{ label: string; x: number; y: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -176,6 +185,64 @@ export const ThreatGlobe: React.FC<ThreatGlobeProps> = ({
 
     let arcs: Arc[] = Array.from({ length: arcCount }, makeArc);
     let spin = 0;
+
+    /* --- Interaction state -------------------------------------------------
+       Dragging sets `spin` directly and banks velocity; on release the globe
+       keeps that velocity and decays back to the idle drift rather than
+       snapping, so the sphere reads as having mass. */
+    let dragVel = 0;
+    let isDown = false;
+    let lastX = 0;
+    let pointer: { x: number; y: number } | null = null;
+    const IDLE_SPIN = 0.0016;
+
+    const localPoint = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      isDown = true;
+      lastX = e.clientX;
+      dragVel = 0;
+      canvas.setPointerCapture(e.pointerId);
+      setDragging(true);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      pointer = localPoint(e);
+      if (!isDown) return;
+      const dx = e.clientX - lastX;
+      lastX = e.clientX;
+      // 0.006 rad per px is roughly a full turn per screen width at this size.
+      const delta = dx * 0.006;
+      spin += delta;
+      dragVel = delta;
+    };
+
+    const endDrag = (e: PointerEvent) => {
+      if (!isDown) return;
+      isDown = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* pointer already released by the browser */
+      }
+      setDragging(false);
+    };
+
+    const onPointerLeave = () => {
+      pointer = null;
+      setHovered(null);
+    };
+
+    if (interactive) {
+      canvas.addEventListener("pointerdown", onPointerDown);
+      canvas.addEventListener("pointermove", onPointerMove);
+      canvas.addEventListener("pointerup", endDrag);
+      canvas.addEventListener("pointercancel", endDrag);
+      canvas.addEventListener("pointerleave", onPointerLeave);
+    }
 
     /** Project a sphere point to screen space, applying spin then tilt. */
     const project = (v: Vec3, radius = R) => {
@@ -243,11 +310,20 @@ export const ThreatGlobe: React.FC<ThreatGlobeProps> = ({
       for (const ring of latRings) strokeRing(ring, "rgba(53, 194, 232, 0.13)", 1);
       for (const ring of lonRings) strokeRing(ring, "rgba(53, 194, 232, 0.10)", 1);
 
-      // Node markers.
+      // Node markers. Hit-testing happens in the same pass as drawing, so the
+      // highlight is always computed against the positions actually on screen
+      // this frame rather than a stale projection from the previous one.
+      let hit: { label: string; x: number; y: number } | null = null;
       for (const n of nodeVecs) {
         const s = project(n.v);
         if (s.z < 0) continue;
         const hostile = n.hostile;
+
+        if (interactive && pointer && n.label) {
+          const dx = pointer.x - s.x;
+          const dy = pointer.y - s.y;
+          if (dx * dx + dy * dy < 90) hit = { label: n.label, x: s.x, y: s.y };
+        }
         // Nodes near the limb fade, which sells the curvature.
         const alpha = Math.min(1, 0.35 + s.z * 0.9);
         const pulse = hostile ? 0.6 + 0.4 * Math.sin(tick * 0.05) : 1;
@@ -266,6 +342,30 @@ export const ThreatGlobe: React.FC<ThreatGlobeProps> = ({
           ctx.strokeRect(s.x - 4.5, s.y - 4.5, 9, 9);
         }
       }
+
+      // Hovered node: crosshair reticle, drawn after all markers so it is
+      // never overdrawn by a node behind it.
+      if (hit) {
+        ctx.strokeStyle = "rgba(53, 194, 232, 0.9)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(hit.x - 7, hit.y - 7, 14, 14);
+        ctx.beginPath();
+        ctx.moveTo(hit.x - 13, hit.y);
+        ctx.lineTo(hit.x - 8, hit.y);
+        ctx.moveTo(hit.x + 8, hit.y);
+        ctx.lineTo(hit.x + 13, hit.y);
+        ctx.moveTo(hit.x, hit.y - 13);
+        ctx.lineTo(hit.x, hit.y - 8);
+        ctx.moveTo(hit.x, hit.y + 8);
+        ctx.lineTo(hit.x, hit.y + 13);
+        ctx.stroke();
+      }
+      // Only push state when the hovered node actually changes -- setting it
+      // every frame would re-render the component 60 times a second.
+      setHovered((prev) => {
+        if (prev?.label === hit?.label && prev?.x === hit?.x) return prev;
+        return hit;
+      });
 
       // Arcs.
       for (let i = 0; i < arcs.length; i++) {
@@ -322,20 +422,58 @@ export const ThreatGlobe: React.FC<ThreatGlobeProps> = ({
         if (arc.t >= 1) arcs[i] = makeArc();
       }
 
-      if (!reduced) spin += 0.0016;
+      if (!reduced) {
+        if (isDown) {
+          // Held: the pointer owns the rotation entirely.
+        } else if (Math.abs(dragVel) > IDLE_SPIN) {
+          // Released with momentum: coast, decaying toward the idle drift.
+          spin += dragVel;
+          dragVel *= 0.94;
+        } else {
+          spin += IDLE_SPIN;
+          dragVel = 0;
+        }
+      }
       frameRef.current = requestAnimationFrame(render);
     };
 
     render();
-    return () => cancelAnimationFrame(frameRef.current);
-  }, [nodes, arcCount, size]);
+    return () => {
+      cancelAnimationFrame(frameRef.current);
+      if (interactive) {
+        canvas.removeEventListener("pointerdown", onPointerDown);
+        canvas.removeEventListener("pointermove", onPointerMove);
+        canvas.removeEventListener("pointerup", endDrag);
+        canvas.removeEventListener("pointercancel", endDrag);
+        canvas.removeEventListener("pointerleave", onPointerLeave);
+      }
+    };
+  }, [nodes, arcCount, size, interactive]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={className}
-      aria-hidden="true"
-      role="presentation"
-    />
+    <div className="relative" style={{ width: size, height: size }}>
+      <canvas
+        ref={canvasRef}
+        className={`${className} ${
+          interactive ? (dragging ? "cursor-grabbing" : "cursor-grab") : ""
+        }`}
+        aria-hidden="true"
+        role="presentation"
+        style={{ touchAction: interactive ? "none" : undefined }}
+      />
+      {/* Node callout. Positioned off the reticle, clamped inside the canvas
+          so a marker near the right edge does not push the label out of view. */}
+      {interactive && hovered && (
+        <div
+          className="absolute pointer-events-none border border-netra-purple bg-netra-bg px-1.5 py-0.5 font-mono text-[9px] tracking-telemetry text-netra-purple whitespace-nowrap"
+          style={{
+            left: Math.min(Math.max(hovered.x + 16, 0), size - 64),
+            top: Math.min(Math.max(hovered.y - 8, 0), size - 18),
+          }}
+        >
+          {hovered.label}
+        </div>
+      )}
+    </div>
   );
 };

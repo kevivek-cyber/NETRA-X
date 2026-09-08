@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { FileText, Hash, ExternalLink, Filter, Trash2, Globe, Plus } from "lucide-react";
 import { ModuleHeader } from "./ModuleHeader";
 import { apiFetch } from "../lib/api";
+import { SkeletonTable } from "./viz/Skeleton";
 
 interface EvidenceVaultProps {
   onOpenIngestionModal?: () => void;
@@ -92,7 +93,7 @@ export const EvidenceVault: React.FC<EvidenceVaultProps> = ({ onOpenIngestionMod
 
       <div className="bg-netra-card border border-netra-border rounded-xl p-5 space-y-4">
         {loading ? (
-          <div className="p-8 text-netra-muted text-sm font-mono animate-pulse">Loading Evidence Ledger...</div>
+          <SkeletonTable rows={9} label="Loading evidence ledger" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-mono">

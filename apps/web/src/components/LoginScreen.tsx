@@ -25,20 +25,37 @@ interface LoginScreenProps {
   onLoginSuccess: (user: any) => void;
 }
 
-/* Describes what the client actually does on start-up: resolve the API base,
-   confirm the ledger answers, and check for an existing session. Written as a
-   boot log because that is what it is, not as invented telemetry. */
-const BOOT_LINES = [
-  "netra-x console v0.1 :: tactical telemetry substrate",
-  "[ OK ] resolving api endpoint ....................... 127.0.0.1:8000",
-  "[ OK ] evidence ledger ............................... reachable",
-  "[ OK ] sha-256 audit chain ........................... append-only",
-  "[ OK ] llr fusion engine ............................. v1.0-LLR",
-  "[ -- ] graph projection .............................. relational fallback",
-  "[ !! ] session token ................................. absent",
-  "",
-  ">> operator authentication required",
-];
+/**
+ * Pre-auth boot log.
+ *
+ * Only two things are actually knowable before an operator signs in: whether
+ * the API answers /health (the one unauthenticated endpoint), and that no
+ * session token is present -- everything else on this screen is behind auth.
+ *
+ * The first version of this log printed six OK lines including "evidence
+ * ledger .. reachable" and "sha-256 audit chain .. append-only" without
+ * issuing a single request. In a product whose entire claim is that no
+ * assertion appears without a source, a decorative green OK is exactly the
+ * wrong thing to put on the front door. The real per-subsystem preflight now
+ * runs after sign-in, where those endpoints can actually be called.
+ */
+function buildBootLines(health: "probing" | "up" | "down", detail: string): string[] {
+  const line = (state: string, label: string, value: string) =>
+    `[ ${state.padEnd(2)} ] ${label.padEnd(34, ".")} ${value}`;
+
+  return [
+    "netra-x console v0.1 :: tactical telemetry substrate",
+    line(
+      health === "probing" ? "*" : health === "up" ? "OK" : "!!",
+      " api endpoint ",
+      health === "probing" ? "probing" : health === "up" ? detail : detail || "unreachable"
+    ),
+    line("!!", " session token ", "absent"),
+    line("--", " subsystem preflight ", "deferred until auth"),
+    "",
+    ">> operator authentication required",
+  ];
+}
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState("analyst@netra-x.local");
@@ -46,6 +63,26 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState("");
+  const [health, setHealth] = useState<"probing" | "up" | "down">("probing");
+  const [healthDetail, setHealthDetail] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<any>("/health")
+      .then((h) => {
+        if (cancelled) return;
+        setHealth("up");
+        setHealthDetail(h.platform ?? "reachable");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setHealth("down");
+        setHealthDetail(err?.message?.slice(0, 28) ?? "unreachable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     // Cosmetic session tag for the header. Generated on the client only --
@@ -108,7 +145,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             className="absolute -bottom-24 -left-24 opacity-[0.55] pointer-events-none hidden sm:block"
             aria-hidden="true"
           >
-            <ThreatGlobe size={520} arcCount={8} />
+            <ThreatGlobe size={520} arcCount={8} interactive={false} />
           </div>
 
           <div className="relative">
@@ -141,8 +178,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           {/* Boot log. Types itself once on mount. */}
           <div className="relative mt-10 hidden sm:block">
             <div className="edge-ticks h-2 w-full mb-3" aria-hidden="true" />
+            {/* Keyed on the probe result so the log retypes once the real
+                answer lands, rather than typing a guess and silently swapping
+                the characters underneath it. */}
             <TypeOut
-              lines={BOOT_LINES}
+              key={health}
+              lines={buildBootLines(health, healthDetail)}
               speed={9}
               lineDelay={60}
               className="font-mono text-[10.5px] leading-[1.6] text-netra-subtle space-y-0"
@@ -215,7 +256,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="group w-full h-11 bg-netra-purple text-netra-bg font-mono text-[11px] font-bold uppercase tracking-telemetry flex items-center justify-center gap-2 hover:bg-netra-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="key-press group w-full h-11 bg-netra-purple text-netra-bg font-mono text-[11px] font-bold uppercase tracking-telemetry flex items-center justify-center gap-2 hover:bg-netra-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   {loading ? (
                     <>
