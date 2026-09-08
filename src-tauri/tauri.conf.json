@@ -4,7 +4,7 @@
     "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1",
     "devPath": "http://localhost:3000",
     "distDir": "../apps/web/out",
-    "withGlobalTauri": false
+    "withGlobalTauri": true
   },
   "package": {
     "productName": "NETRA-X",

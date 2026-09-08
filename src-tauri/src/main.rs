@@ -17,6 +17,31 @@ use tauri::{Manager, RunEvent};
 
 struct ApiProcess(Mutex<Option<Child>>);
 
+/// Toggle OS-level window fullscreen, returning the state it ended up in.
+///
+/// This is a custom command rather than the `window` allowlist because the
+/// allowlist is deliberately closed (`all: false`) and this is the only window
+/// capability the UI needs -- exposing setFullscreen/isFullscreen/etc. to any
+/// script in the webview to get one keybinding is a worse trade.
+///
+/// It also cannot be done from the web side alone: the HTML Fullscreen API
+/// inside WebView2 expands the document within the webview, which already
+/// fills the window, so the title bar and window chrome stay put and nothing
+/// appears to happen. Only the window itself can go truly fullscreen.
+#[tauri::command]
+fn toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    let now = window.is_fullscreen().map_err(|e| e.to_string())?;
+    window.set_fullscreen(!now).map_err(|e| e.to_string())?;
+    Ok(!now)
+}
+
+/// Report current fullscreen state, so the UI can render the right affordance
+/// after a reload or when the window was toggled by other means.
+#[tauri::command]
+fn is_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
 fn spawn_api(resource_dir: &std::path::Path) -> std::io::Result<Child> {
     let python = resource_dir
         .join("resources")
@@ -50,6 +75,7 @@ fn wait_for_api(timeout: Duration) -> bool {
 fn main() {
     tauri::Builder::default()
         .manage(ApiProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![toggle_fullscreen, is_fullscreen])
         .setup(|app| {
             let resource_dir = app
                 .path_resolver()

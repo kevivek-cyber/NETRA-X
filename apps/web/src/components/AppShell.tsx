@@ -20,11 +20,13 @@
 import React, { useEffect, useState } from "react";
 import {
   Activity, Bot, CheckCircle2, FileSearch, FileText, GitMerge,
-  LayoutDashboard, ListTree, Lock, LogOut, Search, ShieldAlert, Users, Globe,
+  LayoutDashboard, ListTree, Lock, LogOut, Maximize2, Minimize2, Search,
+  ShieldAlert, Users, Globe,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import { LiveTicker, UtcClock } from "./viz/LiveTicker";
 import { Waveform } from "./viz/Sparkline";
+import { useFullscreen } from "../lib/useFullscreen";
 
 interface AppShellProps {
   currentView: string;
@@ -79,6 +81,8 @@ export const AppShell: React.FC<AppShellProps> = ({
   onOpenIngestionModal,
   children,
 }) => {
+  const fullscreen = useFullscreen();
+
   const [sys, setSys] = useState<SystemState>({
     backend: null,
     model: null,
@@ -220,6 +224,30 @@ export const AppShell: React.FC<AppShellProps> = ({
             <Search className="w-3 h-3" />
             <kbd className="tracking-telemetry">CTRL+K</kbd>
           </button>
+
+          {/* Fullscreen. Hidden entirely where neither shell can honour it,
+              rather than shown as a control that does nothing. */}
+          {fullscreen.supported && (
+            <button
+              onClick={fullscreen.toggle}
+              title={
+                fullscreen.isFullscreen ? "Exit fullscreen (F11)" : "Fullscreen (F11)"
+              }
+              aria-label={fullscreen.isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              aria-pressed={fullscreen.isFullscreen}
+              className={`flex items-center justify-center w-8 h-8 border transition-colors ${
+                fullscreen.isFullscreen
+                  ? "border-netra-purple bg-netra-card text-netra-purple"
+                  : "border-netra-border bg-netra-card text-netra-subtle hover:text-netra-text hover:border-netra-purple"
+              }`}
+            >
+              {fullscreen.isFullscreen ? (
+                <Minimize2 className="w-3.5 h-3.5" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
 
           <div className="flex items-center gap-2.5 border-l border-netra-border pl-3 h-8">
             <div className="text-right hidden sm:block leading-tight">
