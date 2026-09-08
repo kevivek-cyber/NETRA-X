@@ -27,10 +27,19 @@ export default function Home() {
   const [isIngestionModalOpen, setIsIngestionModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   /**
-   * The preflight runs after a fresh sign-in only. Restoring an existing
-   * session goes straight to the console -- an analyst who reloads the window
-   * mid-investigation should not be made to watch a boot screen, and the
-   * checks it performs are already surfaced live in the header.
+   * The preflight runs on every launch -- a fresh sign-in and a restored
+   * session alike.
+   *
+   * It originally ran only after sign-in, on the reasoning that an analyst
+   * reloading mid-investigation should not be made to watch a boot screen.
+   * That was wrong for the shape this actually ships in: the desktop window
+   * keeps its token, so every launch after the first restored a session and
+   * skipped straight past the preflight. The screen effectively never ran, and
+   * the one moment its checks are most worth seeing -- a cold start, before
+   * any work is done -- was the exact moment it was suppressed.
+   *
+   * ESC still skips it, so the reload case costs a keypress rather than a
+   * design compromise.
    */
   const [booting, setBooting] = useState(false);
 
@@ -44,6 +53,7 @@ export default function Home() {
       try {
         const u = await apiFetch<any>("/api/v1/auth/me");
         setUser(u);
+        setBooting(true);
       } catch (err) {
         console.error("Session invalid", err);
         setAuthToken("");
