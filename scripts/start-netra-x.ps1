@@ -13,22 +13,52 @@
   Node present, because the window loads the UI from the dev server rather
   than from a bundled static export. The self-contained installer -- no repo,
   no Node, embedded Python -- comes from `npm run desktop:build`; see
-  DESKTOP.md. Point the shortcut at that instead once it is built.
+  DESKTOP.md. The binary search below already prefers a release build, so the
+  same shortcut picks that up with no change.
 
   Servers started here keep running after the window closes, so reopening is
   instant. Use -StopOnExit to shut them down with the window instead.
+
+  -Silent is what the desktop shortcut uses (via start-netra-x.vbs): no
+  console exists in that mode, so progress is dropped and failures are
+  reported in a message box rather than written to a stream nobody can see.
 #>
 
 [CmdletBinding()]
 param(
     # Stop the API and frontend when the desktop window closes.
     [switch]$StopOnExit,
+    # No console output; surface failures in a dialog instead.
+    [switch]$Silent,
     # Seconds to wait for each service before giving up.
     [int]$TimeoutSec = 120
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+
+function Write-Status {
+    param([string]$Text, [string]$Colour = 'Gray', [switch]$NoNewline)
+    if ($Silent) { return }
+    Write-Host $Text -ForegroundColor $Colour -NoNewline:$NoNewline
+}
+
+function Stop-WithError {
+    param([string]$Message)
+    if ($Silent) {
+        # Loaded on demand: the assembly costs ~40ms and is only needed when
+        # something has already gone wrong.
+        Add-Type -AssemblyName System.Windows.Forms
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message, 'NETRA-X',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+    } else {
+        Write-Host "  [ !! ] $Message" -ForegroundColor Red
+        Read-Host '  Press Enter to close'
+    }
+    exit 1
+}
 
 function Test-Port {
     param([int]$Port)
@@ -50,49 +80,45 @@ function Wait-Port {
     $deadline = (Get-Date).AddSeconds($Timeout)
     while ((Get-Date) -lt $deadline) {
         if (Test-Port -Port $Port) {
-            Write-Host "  [ OK ] $Label ready on :$Port" -ForegroundColor Green
+            Write-Status "  [ OK ] $Label ready on :$Port" -Colour Green
             return $true
         }
         Start-Sleep -Milliseconds 700
-        Write-Host '.' -NoNewline -ForegroundColor DarkGray
+        Write-Status '.' -Colour DarkGray -NoNewline
     }
-    Write-Host ''
-    Write-Host "  [ !! ] $Label did not come up on :$Port within ${Timeout}s" -ForegroundColor Red
     return $false
 }
 
-Write-Host ''
-Write-Host '  NETRA-X' -ForegroundColor Cyan
-Write-Host '  Dark Web Threat Actor Intelligence & Attribution' -ForegroundColor DarkGray
-Write-Host ''
+Write-Status ''
+Write-Status '  NETRA-X' -Colour Cyan
+Write-Status '  Dark Web Threat Actor Intelligence & Attribution' -Colour DarkGray
+Write-Status ''
 
 $started = @()
 
 # --- 1. Backend ------------------------------------------------------------
 if (Test-Port -Port 8000) {
-    Write-Host '  [ -- ] api already running on :8000' -ForegroundColor DarkYellow
+    Write-Status '  [ -- ] api already running on :8000' -Colour DarkYellow
 } else {
     $python = Join-Path $repo '.venv\Scripts\python.exe'
     if (-not (Test-Path $python)) { $python = 'python' }   # fall back to PATH
 
-    Write-Host '  [ ** ] starting api ' -NoNewline
+    Write-Status '  [ ** ] starting api ' -NoNewline
     $p = Start-Process -FilePath $python `
                        -ArgumentList 'apps/api/desktop_main.py' `
                        -WorkingDirectory $repo `
                        -WindowStyle Hidden -PassThru
     $started += $p
     if (-not (Wait-Port -Port 8000 -Label 'api' -Timeout $TimeoutSec)) {
-        Write-Host '  Backend failed to start. Is the virtualenv installed?' -ForegroundColor Red
-        Read-Host '  Press Enter to close'
-        exit 1
+        Stop-WithError "The NETRA-X backend did not start on port 8000 within ${TimeoutSec}s.`n`nCheck that the virtualenv exists at:`n$repo\.venv"
     }
 }
 
 # --- 2. Frontend -----------------------------------------------------------
 if (Test-Port -Port 3000) {
-    Write-Host '  [ -- ] frontend already running on :3000' -ForegroundColor DarkYellow
+    Write-Status '  [ -- ] frontend already running on :3000' -Colour DarkYellow
 } else {
-    Write-Host '  [ ** ] starting frontend ' -NoNewline
+    Write-Status '  [ ** ] starting frontend ' -NoNewline
     # npm is a .cmd shim, so it has to go through cmd.exe to be spawnable.
     $p = Start-Process -FilePath 'cmd.exe' `
                        -ArgumentList '/c', 'npm', 'run', 'dev' `
@@ -100,21 +126,19 @@ if (Test-Port -Port 3000) {
                        -WindowStyle Hidden -PassThru
     $started += $p
     if (-not (Wait-Port -Port 3000 -Label 'frontend' -Timeout $TimeoutSec)) {
-        Write-Host '  Frontend failed to start. Have you run npm install?' -ForegroundColor Red
-        Read-Host '  Press Enter to close'
-        exit 1
+        Stop-WithError "The NETRA-X frontend did not start on port 3000 within ${TimeoutSec}s.`n`nHave you run 'npm install' in apps\web?"
     }
 }
 
 # --- 3. Desktop window -----------------------------------------------------
-# Release build wins when both exist: it is the packaged artifact, and a stale
-# debug binary sitting next to a fresh release one should not shadow it.
+# Release wins over debug: it is the optimised build, and -- the reason this
+# matters here -- only release links as a WINDOWS-subsystem binary. A debug
+# build is CONSOLE-subsystem and opens a terminal alongside the app, so
+# launching one from a deliberately silent shortcut would undo the point of it.
 #
 # Two names per profile because the output depends on how it was built:
 # `tauri dev`/`tauri build` rename the binary to the productName (NETRA-X.exe),
-# while a plain `cargo build` leaves it under the crate name. Only checking the
-# Tauri name made the launcher report "no desktop binary found" next to a
-# perfectly good one.
+# while a plain `cargo build` leaves it under the crate name.
 $candidates = @(
     (Join-Path $repo 'src-tauri\target\release\NETRA-X.exe'),
     (Join-Path $repo 'src-tauri\target\release\netra-x-desktop.exe'),
@@ -124,24 +148,18 @@ $candidates = @(
 $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $exe) {
-    Write-Host ''
-    Write-Host '  [ !! ] no desktop binary found.' -ForegroundColor Red
-    Write-Host '         Build one with:  npm run desktop:dev   (or desktop:build)' -ForegroundColor DarkGray
-    Write-Host "         The UI is still usable at http://localhost:3000" -ForegroundColor DarkGray
-    Read-Host '  Press Enter to close'
-    exit 1
+    Stop-WithError "No NETRA-X desktop binary was found.`n`nBuild one with:`n  cargo build --release   (in src-tauri)`n`nThe interface is still reachable at http://localhost:3000"
 }
 
-Write-Host "  [ OK ] launching window" -ForegroundColor Green
-Write-Host ''
+Write-Status '  [ OK ] launching window' -Colour Green
+Write-Status ''
 
 if ($StopOnExit) {
     Start-Process -FilePath $exe -Wait
-    Write-Host '  Window closed, stopping services this launcher started.' -ForegroundColor DarkGray
+    Write-Status '  Window closed, stopping services this launcher started.' -Colour DarkGray
     foreach ($p in $started) {
         try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { }
     }
 } else {
     Start-Process -FilePath $exe
-    Start-Sleep -Seconds 2
 }
