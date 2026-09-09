@@ -110,8 +110,8 @@ Description: Selling initial access credentials to ransomware targets. Payment v
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-netra-card border border-netra-cyan/50 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden glass-panel font-sans">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+      <div className="bg-netra-card border border-netra-cyan/50 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden glass-panel font-sans">
         {/* Header */}
         <div className="px-6 py-4 border-b border-netra-border flex justify-between items-center bg-netra-surface/50">
           <div className="flex items-center space-x-3">
@@ -185,7 +185,7 @@ Description: Selling initial access credentials to ransomware targets. Payment v
             <button
               onClick={handleStartIngestion}
               disabled={isCrawling || !rawContent.trim()}
-              className="w-full py-3 bg-netra-cyan text-netra-bg hover:bg-netra-cyan/90 font-bold text-xs rounded-lg flex items-center justify-center space-x-2 transition shadow-lg disabled:opacity-50 uppercase tracking-wider"
+              className="w-full py-3 bg-netra-cyan text-netra-bg hover:bg-netra-cyan/90 font-bold text-xs rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 uppercase tracking-wider"
             >
               {isCrawling ? (
                 <>

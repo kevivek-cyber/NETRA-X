@@ -1,0 +1,34 @@
+# Backend dependencies installed into the embedded Python runtime used by
+# the packaged desktop app (see scripts/build-desktop.ps1).
+#
+# This mirrors the base `[project].dependencies` list in pyproject.toml,
+# minus asyncpg/psycopg2 (desktop mode is SQLite-only, see
+# apps/api/desktop_main.py) and minus neo4j/redis/minio client libraries,
+# which desktop mode never configures.
+#
+# Omitting the neo4j client is only safe because packages/graph/projection.py
+# imports it inside a try/except and treats an absent driver exactly like an
+# unreachable server. It did not always: the import was unconditional, so the
+# first packaged build failed at start-up with ModuleNotFoundError before
+# serving a single request. If that guard is ever removed, this line has to
+# come back.
+#
+# Keeping this list in sync with pyproject.toml's core deps is a manual step
+# whenever that list changes.
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+sqlalchemy[asyncio]>=2.0.28
+aiosqlite>=0.20.0
+pydantic>=2.6.4
+pydantic-settings>=2.2.1
+pyjwt>=2.8.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.9
+spacy>=3.7.4
+scikit-learn>=1.4.1.post1
+numpy>=1.26.4
+faststylometry>=0.0.6
+mmh3>=4.1.0
+reportlab>=4.1.0
+httpx>=0.27.0
+python-dotenv>=1.0.1

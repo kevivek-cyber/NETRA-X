@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import Session, joinedload
 
 from packages.evidence.uuid7 import uuidv7_str

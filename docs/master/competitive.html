@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SIH26151 — Competitive Landscape</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .rank { font-family:"SF Mono",Consolas,monospace; font-weight:700; font-size:9pt; }
+  .t-hi   { color:#B02A26; font-weight:700; }
+  .t-med  { color:#B45309; font-weight:700; }
+  .t-lo   { color:#2F7A45; font-weight:700; }
+  .repo   { font-family:"SF Mono",Consolas,monospace; font-size:7.9pt; }
+  .tier-head { background:#12303c; color:#fff; padding:2.5mm 4mm; margin:7mm 0 3mm 0;
+               font-family:-apple-system,"Segoe UI",sans-serif; font-weight:650; font-size:11pt;
+               border-radius:3px; }
+  .tier-head span { font-weight:400; font-size:9pt; color:#a8cddb; display:block; margin-top:.8mm; }
+  .card { border:1px solid var(--rule); border-radius:3px; padding:3.5mm 4mm; margin-bottom:4mm;
+          page-break-inside:avoid; }
+  .card h4 { margin:0 0 1.5mm 0; font-size:11pt; }
+  .card .meta { font-family:"SF Mono",Consolas,monospace; font-size:7.6pt; color:var(--muted);
+                margin-bottom:2.5mm; }
+  .card dl { margin:0; display:grid; grid-template-columns:26mm 1fr; gap:1mm 3mm; font-size:9pt; }
+  .card dt { font-weight:650; color:var(--accent-d); }
+  .card dd { margin:0; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="eyebrow">Competitive Intelligence</div>
+  <h1>SIH26151</h1>
+  <div class="sub">The Competitive Landscape</div>
+  <div class="rule"></div>
+  <div class="sub" style="font-size:11pt;color:#a8cddb;max-width:120mm">
+    Every public GitHub repository working on Dark Web Threat Actor
+    De-anonymization — scraped, compared, and ranked against NETRA-X.
+  </div>
+
+  <div class="warnbox">
+    <b>16 competing implementations found.</b> Each was fetched and read directly
+    rather than inferred from its name. Where a repository states no tests, no
+    metrics, or no scoring method, that absence is recorded as a finding — it is
+    the most common weakness in the field, and the one NETRA-X is best positioned
+    to exploit.
+  </div>
+
+  <div class="meta">
+    <b>Problem statement</b> &nbsp; SIH26151 &nbsp;·&nbsp; NTRO &nbsp;·&nbsp; Blockchain &amp; Cybersecurity<br>
+    <b>Sources</b> &nbsp; GitHub repository search + full-text search, September 2026<br>
+    <b>Competitors profiled</b> &nbsp; 16 &nbsp;·&nbsp; <b>Serious threats</b> &nbsp; 4
+  </div>
+</section>
+
+<h1 class="vol"><span class="vnum">Section One</span>Executive Summary</h1>
+<div class="volrule"></div>
+
+<div class="box bad">
+  <span class="lbl">The headline</span>
+  <p>
+    <b>NETRA-X ranks 3rd–4th of 16 on execution, and 1st on methodology.</b>
+  </p>
+  <p>
+    No competitor implements <b>dependence discounting</b> — the correction that
+    stops one leak being counted several times. Every scoring approach found
+    (Noisy-OR, weighted linear sums, unstated fusion) assumes evidence is
+    independent. That assumption is wrong in this domain, and it is the single
+    defensible technical claim NETRA-X holds alone.
+  </p>
+  <p>
+    The gaps against the leaders are <b>engineering, not thinking</b>: enforced
+    RBAC, a pretrained sentence encoder, CI, and a committed Tor testbed. All
+    four are hours-to-a-day of work.
+  </p>
+</div>
+
+<h2>1.1 The field at a glance</h2>
+
+<table>
+<thead><tr>
+  <th style="width:6%">#</th><th style="width:23%">Project</th><th style="width:15%">Stack</th>
+  <th style="width:28%">Scoring method</th><th style="width:13%">Evidence of rigour</th><th style="width:15%">Threat</th>
+</tr></thead>
+<tbody>
+<tr><td class="rank">1</td><td><b>sharan112212/darkweb</b><br><span class="repo">Python · Streamlit</span></td>
+    <td>FastAPI, Postgres, Neo4j, MinIO</td>
+    <td><b>Noisy-OR</b> &nbsp;<code>P = 1 − ∏(1−wᵢ)</code><br>4 categories, caps, 5 tiers</td>
+    <td><b>238 tests</b></td><td class="t-hi">HIGH</td></tr>
+
+<tr><td class="rank">2</td><td><b>bhedanikhilkumar-code/SENTINEL-X</b><br><span class="repo">TypeScript · Python</span></td>
+    <td>FastAPI, Postgres 16, Neo4j 5.18, Redis, ChromaDB, Celery, React+Cytoscape</td>
+    <td>Multi-vector confidence <code>C_total</code><br>SBERT 384-D, UTXO peel-chains</td>
+    <td>pytest + CI/CD<br>41 commits</td><td class="t-hi">HIGH</td></tr>
+
+<tr><td class="rank">3</td><td><b>AnuAnsh17/DRISHTI</b><br><span class="repo">Python</span></td>
+    <td>Plugin collectors, temporal graph</td>
+    <td><b>Fellegi–Sunter</b> + Dempster–Shafer<br><i>(same basis as NETRA-X)</i></td>
+    <td><b>No counts published</b></td><td class="t-hi">HIGH</td></tr>
+
+<tr><td class="rank">4</td><td><b>NETRA-X</b> (ours)<br><span class="repo">Python · TypeScript</span></td>
+    <td>FastAPI, SQLite/Postgres, Neo4j, Next.js 14 + Cytoscape</td>
+    <td><b>Fellegi–Sunter LLR</b><br>+ λ discount + family caps<br>+ uncapped contradictions</td>
+    <td><b>115 tests</b><br><b>Reproducible bench</b></td><td class="t-lo">—</td></tr>
+
+<tr><td class="rank">5</td><td>Driven-Ansh/traceforge<br><span class="repo">TypeScript · Python</span></td>
+    <td>FastAPI, NetworkX, React+Cytoscape</td>
+    <td>Weighted linear: PGP .25, UTXO .20, stylometry .18, heatmap .15, infra .12, temporal .06, trust .05</td>
+    <td>5 scenarios<br>claims 94.2% P / 91.5% R</td><td class="t-med">MED</td></tr>
+
+<tr><td class="rank">6</td><td>rohantiwari9573/SIH-26 "Argus"<br><span class="repo">Python</span></td>
+    <td>Not disclosed</td><td>Not disclosed</td><td>Unknown</td><td class="t-med">MED</td></tr>
+
+<tr><td class="rank">7</td><td>hocuspocus07/argus<br><span class="repo">Python</span></td>
+    <td>Not disclosed</td><td>"Autonomous" correlation</td><td>Unknown</td><td class="t-med">MED</td></tr>
+
+<tr><td class="rank">8</td><td>kalees-bytes/SIH26151<br><span class="repo">Python</span></td>
+    <td>Flask + Streamlit</td>
+    <td>Flat weighted sum:<br><code>0.30·infra + 0.40·identity + 0.30·stylometry</code></td>
+    <td><b>2 commits, no tests</b></td><td class="t-lo">LOW</td></tr>
+
+<tr><td class="rank">9</td><td>xarjunpatil/SIH26151<br><span class="repo">HTML</span></td>
+    <td>FastAPI, PostGIS, Chart.js</td>
+    <td>"AI anomaly scoring" (unspecified)</td>
+    <td><b>1 commit</b></td><td class="t-lo">LOW</td></tr>
+
+<tr><td class="rank">10</td><td>siddharthreddy432/CipherForge<br><span class="repo">TypeScript</span></td>
+    <td>React, Express, in-memory graph</td>
+    <td>"Evidence ledger" (no formula)</td>
+    <td><b>2 commits</b></td><td class="t-lo">LOW</td></tr>
+
+<tr><td class="rank">11</td><td>kd20072348-arch/NTRO-crypto-tracing<br><span class="repo">TypeScript</span></td>
+    <td>MCP server, Node</td>
+    <td>Not disclosed</td><td>13 commits</td><td class="t-lo">LOW</td></tr>
+
+<tr><td class="rank">12</td><td>fayaaz01/Dark-Shark<br><span class="repo">HTML</span></td>
+    <td>Static page + workflows</td>
+    <td>Not disclosed</td><td>17 commits</td><td class="t-lo">LOW</td></tr>
+
+<tr><td class="rank">13</td><td>BlackCoffeeCode/DarkTrace</td><td colspan="2">Not disclosed</td><td>Unknown</td><td class="t-lo">LOW</td></tr>
+<tr><td class="rank">14</td><td>swaroop-reddy7/Darktrace<br><span class="repo">Python</span></td><td colspan="2">Not disclosed</td><td>Unknown</td><td class="t-lo">LOW</td></tr>
+<tr><td class="rank">15</td><td>siddharthreddy432/CipherForge (2nd repo)</td><td colspan="2">Duplicate of #10</td><td>—</td><td class="t-lo">LOW</td></tr>
+<tr><td class="rank">16</td><td>Tiruvadhi-Chiruhasini/trace</td><td colspan="2"><b>Repository is empty</b></td><td>0 commits</td><td class="t-lo">NONE</td></tr>
+</tbody>
+</table>
+
+<h2>1.2 What the whole field gets wrong</h2>
+
+<div class="box good">
+  <span class="lbl">The gap nobody else has closed</span>
+  <p>
+    Across all 16 repositories, <b>not one mentions handling correlated
+    evidence.</b> The scoring methods found were:
+  </p>
+  <ul>
+    <li><b>Noisy-OR</b> — assumes conditional independence by construction</li>
+    <li><b>Weighted linear sums</b> — assume independence and additionally saturate</li>
+    <li><b>Fellegi–Sunter</b> (DRISHTI) — the right framework, but no λ or dependence-group handling described</li>
+    <li><b>Unstated</b> — the majority</li>
+  </ul>
+  <p>
+    In this domain the assumption is demonstrably false. A reused Bitcoin address
+    and the co-spend cluster containing that address are <b>one operational
+    mistake observed twice</b>. Every competitor counts it twice. NETRA-X counts
+    it once plus a quarter, via λ = 0.25 within a declared dependence group.
+  </p>
+</div>
+
+<h1 class="vol"><span class="vnum">Section Two</span>Threat Profiles</h1>
+<div class="volrule"></div>
+
+<div class="tier-head">Tier 1 — Serious competition
+  <span>Working systems with published methodology and evidence of engineering discipline</span></div>
+
+<div class="card">
+  <h4>sharan112212/darkweb</h4>
+  <div class="meta">Python · Streamlit · 238 tests · ~24 modules</div>
+  <dl>
+    <dt>Scoring</dt><dd>Noisy-OR, <code>P = 1 − ∏(1 − wᵢ)</code>. Four categories (K cryptographic, I infrastructure, B behavioural, S semantic). Caps: text alone ≤ 0.20, lone infra/behavioural ≤ 0.65. Five tiers with ±0.03 hysteresis.</dd>
+    <dt>Stack</dt><dd>FastAPI, Streamlit, PostgreSQL 16, Neo4j 5, MinIO, Nginx, Tor proxy, Docker Compose</dd>
+    <dt>ML</dt><dd><b>MiniLM sentence-transformers</b> — a genuinely pretrained model. 50+ stylometric features via pystylometry.</dd>
+    <dt>Strengths</dt><dd>238 tests. OnionScan integrated. RBAC across 4 levels. SHA-256 hash-chained audit log. Tor in-repo.</dd>
+    <dt>Weaknesses</dt><dd>Noisy-OR saturates toward 1.0 as weak signals accumulate. Weights are asserted, not decomposable. No negative evidence described. Streamlit UI is a prototyping tool, not a product surface.</dd>
+    <dt>Beat them by</dt><dd>Dependence discounting and uncapped contradictions — both structurally absent from Noisy-OR. Our Next.js UI outclasses Streamlit on a demo video.</dd>
+  </dl>
+</div>
+
+<div class="card">
+  <h4>bhedanikhilkumar-code/SENTINEL-X</h4>
+  <div class="meta">TypeScript + Python · 41 commits · 27 endpoints · 9 containers</div>
+  <dl>
+    <dt>Scoring</dt><dd>Multi-vector confidence <code>C_total</code>. Method not published in detail.</dd>
+    <dt>Stack</dt><dd>FastAPI async, Python 3.12, PostgreSQL 16, Neo4j 5.18, Redis 7, ChromaDB, Celery, React 18 + Vite + Cytoscape + Leaflet, Tor proxy</dd>
+    <dt>ML</dt><dd>SBERT 384-D embeddings for stylometry. UTXO peel-chain and mixer detection.</dd>
+    <dt>Strengths</dt><dd>Closest architectural match to NETRA-X, and ahead on ops: <b>RBAC enforced (4 roles)</b>, <b>CI/CD in .github/workflows</b>, Celery task queue, 9-container compose, geospatial layer.</dd>
+    <dt>Weaknesses</dt><dd>Claims "court-admissible documentation via Section 65B compliance" — a legal claim no hackathon prototype can support, and an obvious line of attack for a judge. No test count published. Synthetic data only. Two hardcoded demo targets (0.912, 0.760).</dd>
+    <dt>Beat them by</dt><dd>Methodological transparency. Their fusion is a black box; ours shows every item's contribution, discount and cap. Also press the Section 65B claim — it will not survive scrutiny.</dd>
+  </dl>
+</div>
+
+<div class="card">
+  <h4>AnuAnsh17/DRISHTI</h4>
+  <div class="meta">Python · updated within 24h — actively developed</div>
+  <dl>
+    <dt>Scoring</dt><dd><b>Fellegi–Sunter</b> for entity disambiguation, plus Dempster–Shafer / Bayesian confidence modelling. The same theoretical foundation as NETRA-X.</dd>
+    <dt>Stack</dt><dd>Plugin-based collectors, temporal graph modelling, provenance tracking with source-reliability scoring</dd>
+    <dt>Strengths</dt><dd>Only other team citing Fellegi–Sunter. Neutralises "we use the forensic likelihood-ratio standard" as a unique claim. Research directory suggests genuine literature grounding.</dd>
+    <dt>Weaknesses</dt><dd><b>No test count. No metrics. No numbers at all.</b> Their README describes a synthetic evaluation lab measuring precision, recall and false positives — with the results left blank. Framework named, results absent.</dd>
+    <dt>Beat them by</dt><dd>Running numbers. <code>python -m bench.report</code> outputs ROC-AUC 0.9028, ECE 0.0044, FAR 0.00%, Recall@10 100%, reproducibly at seed 42. Also: they cite the framework; we implement the correction (λ) that the framework alone does not give you.</dd>
+  </dl>
+</div>
+
+<div class="tier-head">Tier 2 — Credible but thin
+  <span>Working code, weaker or unstated methodology</span></div>
+
+<div class="card">
+  <h4>Driven-Ansh/sih26151-traceforge</h4>
+  <div class="meta">FastAPI + React · 5 commits · 18+ endpoints</div>
+  <dl>
+    <dt>Scoring</dt><dd>Calibrated linear weighting — PGP 0.25, UTXO 0.20, stylometry 0.18, activity heatmap 0.15, infrastructure 0.12, temporal 0.06, trust network 0.05; minus two contradiction deductions; × 0.95 source reliability.</dd>
+    <dt>Claimed metrics</dt><dd>94.2% precision, 91.5% recall, 92.8% F1, +18.6% over stylometry alone — across <b>5 demo scenarios</b>.</dd>
+    <dt>Assessment</dt><dd>Nearly identical stack to ours (FastAPI, React, Cytoscape, Render). <b>They do have contradiction deductions</b> — the only competitor that does. But the weights are asserted with no derivation, and precision/recall on five hand-built cases is not a benchmark. Quoting 94.2% from n = 5 is a number a judge can dismantle.</dd>
+  </dl>
+</div>
+
+<div class="card">
+  <h4>rohantiwari9573/SIH-26 "Argus" &nbsp;·&nbsp; hocuspocus07/argus</h4>
+  <div class="meta">Python · both active within the last week</div>
+  <dl>
+    <dt>Assessment</dt><dd>Two separate projects sharing a name. Both actively developed, neither publishes methodology, tests or metrics. Unknown quantities — worth re-checking before the final round, since activity suggests they are still building.</dd>
+  </dl>
+</div>
+
+<div class="tier-head">Tier 3 — Not competitive
+  <span>Prototypes, scaffolds, or abandoned</span></div>
+
+<table>
+<thead><tr><th style="width:28%">Project</th><th style="width:16%">Evidence</th><th style="width:56%">Why it is not a threat</th></tr></thead>
+<tbody>
+<tr><td>kalees-bytes/SIH26151</td><td>2 commits</td><td>Flat weighted sum <code>0.30·infra + 0.40·identity + 0.30·stylometry</code>. No tests, no CI, no metrics. Flask + Streamlit.</td></tr>
+<tr><td>xarjunpatil/SIH26151</td><td>1 commit</td><td>Single-file FastAPI app plus a glassmorphic HTML dashboard. Scoring described only as "AI anomaly scoring".</td></tr>
+<tr><td>siddharthreddy432/CipherForge</td><td>2 commits</td><td>React + Express with an <b>in-memory graph simulation</b> — no persistence. Two near-duplicate repositories.</td></tr>
+<tr><td>kd20072348-arch/NTRO-crypto-tracing</td><td>13 commits</td><td>An MCP server for conversational crypto tracing. Narrow scope — blockchain only, no stylometry or infrastructure correlation.</td></tr>
+<tr><td>fayaaz01/Dark-Shark</td><td>17 commits</td><td>Static <code>index.html</code> plus workflows. No disclosed backend or methodology.</td></tr>
+<tr><td>BlackCoffeeCode/DarkTrace<br>swaroop-reddy7/Darktrace</td><td>Unknown</td><td>No published README detail. Two unrelated projects sharing a name (and both colliding with the commercial Darktrace brand).</td></tr>
+<tr><td>Tiruvadhi-Chiruhasini/trace</td><td><b>0 commits</b></td><td><b>Repository is empty.</b> Description only.</td></tr>
+</tbody>
+</table>
+
+<h1 class="vol"><span class="vnum">Section Three</span>NETRA-X — Position and Actions</h1>
+<div class="volrule"></div>
+
+<h2>3.1 Method comparison</h2>
+
+<table>
+<thead><tr><th style="width:22%">Property</th><th style="width:20%">Noisy-OR</th><th style="width:20%">Weighted sum</th><th style="width:18%">F–S (DRISHTI)</th><th style="width:20%">NETRA-X</th></tr></thead>
+<tbody>
+<tr><td>Parameters derived from</td><td>Asserted <var>wᵢ</var></td><td>Asserted weights</td><td><var>m</var>/<var>u</var></td><td><b><var>m</var>/<var>u</var>, each separately arguable</b></td></tr>
+<tr><td>Correlated evidence</td><td>Assumed independent</td><td>Assumed independent</td><td>Not described</td><td><b>λ = 0.25 discount</b></td></tr>
+<tr><td>Negative evidence</td><td>Not described</td><td>traceforge only</td><td>Not described</td><td><b>Uncapped, −20 / −15</b></td></tr>
+<tr><td>Saturation behaviour</td><td>→ 1.0 with volume</td><td>→ 1.0 with volume</td><td>Unbounded</td><td><b>Capped per family</b></td></tr>
+<tr><td>Per-item explanation</td><td>Hard (product form)</td><td>Easy</td><td>Not described</td><td><b>Exact waterfall + artifact hash</b></td></tr>
+<tr><td>Published metrics</td><td>238 tests</td><td>n = 5 scenarios</td><td><b>None</b></td><td><b>Reproducible bench, seed 42</b></td></tr>
+</tbody>
+</table>
+
+<h2>3.2 Honest scorecard</h2>
+
+<div class="grid2">
+  <div class="box good">
+    <span class="lbl">Where we lead</span>
+    <ul style="margin-bottom:0">
+      <li><b>Dependence discounting</b> — unique in the field</li>
+      <li><b>Uncapped contradictions</b> — only traceforge has anything comparable</li>
+      <li><b>Family caps that force corroboration</b> — stylometry 3.0 &lt; threshold 3.73</li>
+      <li><b>Per-item evidence waterfall</b> with artifact digests</li>
+      <li><b>Reproducible benchmark</b> — DRISHTI publishes none</li>
+      <li><b>Production frontend</b> — Next.js + Cytoscape beats Streamlit</li>
+      <li><b>Retraction over deletion</b> — nobody else discusses ledger integrity</li>
+    </ul>
+  </div>
+  <div class="box bad">
+    <span class="lbl">Where we trail</span>
+    <ul style="margin-bottom:0">
+      <li><b>Tests</b> — 115 vs 238 (sharan112212)</li>
+      <li><b>Semantic model</b> — untrained random weights vs MiniLM / SBERT</li>
+      <li><b>RBAC</b> — stored but <b>never enforced</b>; two rivals enforce it</li>
+      <li><b>CI</b> — slide claims GitHub Actions; no workflow exists</li>
+      <li><b>Tor</b> — testbed works but sits outside the repository</li>
+      <li><b>Stylometry breadth</b> — ~4 feature types vs 50+</li>
+    </ul>
+  </div>
+</div>
+
+<h2>3.3 Actions before submission</h2>
+
+<table>
+<thead><tr><th style="width:8%">Pri</th><th style="width:32%">Action</th><th style="width:12%">Effort</th><th style="width:48%">Why it matters competitively</th></tr></thead>
+<tbody>
+<tr><td class="rank t-hi">1</td><td><b>Enforce RBAC</b></td><td>~1 hour</td><td>Column and token claim already exist; only a dependency check is missing. Two rivals enforce it. Cheapest credibility gain available.</td></tr>
+<tr><td class="rank t-hi">2</td><td><b>Add CI workflow</b></td><td>~30 min</td><td>The tech-stack slide shows GitHub Actions and <code>.github/workflows/</code> does not exist. Currently a self-inflicted wound.</td></tr>
+<tr><td class="rank t-hi">3</td><td><b>Commit the Tor testbed</b></td><td>~15 min</td><td>A working hidden service with six planted leaks and 13/13 verification is invisible because <code>testbed/</code> is wholly gitignored. Ignore only <code>.runtime/</code>.</td></tr>
+<tr><td class="rank t-med">4</td><td><b>Swap in MiniLM / SBERT</b></td><td>~1 day</td><td>Closes the one place a rival is unambiguously ahead, and removes the need to say "untrained" about anything.</td></tr>
+<tr><td class="rank t-med">5</td><td><b>Wire the isotonic calibrator</b></td><td>~2 hours</td><td>The benchmark fits a calibrator the live API never uses. Closing this makes the published metrics describe the shipped path.</td></tr>
+<tr><td class="rank t-lo">6</td><td>Raise test count toward 150+</td><td>~half day</td><td>Optics against 238. Lower value than 1–3.</td></tr>
+</tbody>
+</table>
+
+<h2>3.4 Positioning</h2>
+
+<div class="box">
+  <span class="lbl">If compared to DRISHTI (Fellegi–Sunter)</span>
+  <p>
+    "We share the framework. The difference is what we added to it. Fellegi–Sunter
+    assumes conditional independence — so a reused wallet and the co-spend cluster
+    containing it count twice. We discount correlated evidence explicitly within
+    dependence groups. And our benchmark reports numbers: ROC-AUC 0.9028, ECE
+    0.0044, false-attribution rate zero, reproducible at seed 42."
+  </p>
+</div>
+
+<div class="box">
+  <span class="lbl">If compared to sharan112212 (Noisy-OR)</span>
+  <p>
+    "Noisy-OR multiplies out complements, which means enough weak signals push the
+    score toward certainty and the weights themselves are asserted rather than
+    derived. Our <var>m</var> and <var>u</var> are separately defensible — how
+    often you see a clue between the same operator, versus between strangers. And
+    we can go negative: conflicting PGP keys subtract twenty, uncapped, and reject
+    the link outright."
+  </p>
+</div>
+
+<div class="box">
+  <span class="lbl">If compared to SENTINEL-X</span>
+  <p>
+    "Comparable architecture. Ours is auditable end to end — every score decomposes
+    into named evidence items with their discount, their cap and the SHA-256 of the
+    artifact each came from. We also don't claim court admissibility, because
+    admissibility depends on jurisdiction, collection legality and expert
+    testimony, not on a hash chain existing."
+  </p>
+</div>
+
+<div class="box good" style="margin-top:7mm">
+  <span class="lbl">The one-line summary</span>
+  <p>
+    <b>Sixteen teams are scoring evidence. Fifteen of them count the same mistake
+    more than once.</b> That is the argument, and it holds against every
+    implementation found.
+  </p>
+</div>
+
+<p class="small" style="margin-top:8mm">
+Sources: GitHub repository search for <code>SIH26151</code> and full-text search
+for "dark web threat actor de-anonymization", September 2026. Each repository was
+fetched and read individually. Statements of "not disclosed" mean the information
+is absent from the public README, not that the capability is absent from the code.
+</p>
+
+</body>
+</html>

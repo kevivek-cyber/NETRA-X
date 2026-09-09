@@ -6,7 +6,21 @@ Provides asynchronous projection workers, Cypher query helpers, and full graph r
 import os
 import time
 from typing import Any, Dict, List, Optional
-from neo4j import GraphDatabase, Driver
+try:
+    from neo4j import GraphDatabase, Driver
+except ImportError:  # pragma: no cover - exercised only in driver-less builds
+    # The Neo4j client is an optional dependency. This module already treats an
+    # unreachable server as a normal condition and falls back to relational
+    # topology, but the import itself was unconditional -- so a build that
+    # omits the driver (the packaged desktop app, which never configures Neo4j)
+    # failed at import time and took the entire API down with it, which is the
+    # one outcome the fallback exists to prevent.
+    #
+    # Absent driver is now the same case as absent server: get_driver() raises,
+    # the callers' existing handlers catch it, and the relational path serves
+    # the request.
+    GraphDatabase = None  # type: ignore[assignment]
+    Driver = Any  # type: ignore[misc,assignment]
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -35,6 +49,10 @@ class GraphProjectionService:
         self._driver: Optional[Driver] = None
 
     def get_driver(self) -> Driver:
+        if GraphDatabase is None:
+            raise RuntimeError(
+                "neo4j driver is not installed; graph projection unavailable"
+            )
         if self._driver is None:
             self._driver = GraphDatabase.driver(
                 self.uri,

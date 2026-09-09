@@ -105,8 +105,8 @@ export const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-netra-card border border-netra-purple/50 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden glass-panel">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+      <div className="bg-netra-card border border-netra-purple/50 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden glass-panel">
         {/* Header */}
         <div className="px-6 py-4 border-b border-netra-border flex justify-between items-center bg-netra-surface/50">
           <div className="flex items-center space-x-3">
@@ -197,7 +197,7 @@ export const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({
                       onClick={() => setExportFormat(fmt.id as any)}
                       className={`p-3 rounded-xl border cursor-pointer transition flex flex-col justify-between space-y-2 ${
                         isSelected
-                          ? "bg-netra-purple/20 border-netra-purple text-white shadow-lg"
+                          ? "bg-netra-purple/20 border-netra-purple text-white"
                           : "bg-netra-surface border-netra-border text-netra-muted hover:border-netra-muted/50 hover:text-white"
                       }`}
                     >
@@ -342,7 +342,7 @@ export const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({
             <button
               onClick={handleDownload}
               disabled={isGenerating}
-              className="px-6 py-2 rounded-lg bg-netra-purple hover:bg-netra-purple/80 text-white font-semibold text-xs flex items-center space-x-2 transition shadow-lg disabled:opacity-50"
+              className="px-6 py-2 rounded-lg bg-netra-purple hover:bg-netra-purple/80 text-white font-semibold text-xs flex items-center space-x-2 transition disabled:opacity-50"
             >
               {isGenerating ? (
                 <>

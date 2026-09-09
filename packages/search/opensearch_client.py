@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from packages.schemas.models import SearchResponse, SearchResultItem
-from apps.api.database.models import Actor, Alias, Evidence, Observation, PGPKey, Wallet
+from apps.api.database.models import (
+    Account, Actor, Alias, Evidence, Observation, OnionService, PGPKey, Wallet,
+)
 
 
 class OpenSearchService:
@@ -164,7 +166,15 @@ class OpenSearchService:
             ))
 
         # 4. Search Wallets
-        wallets = db.query(Wallet).filter(Wallet.address.ilike(pattern)).limit(limit).all()
+        #
+        # cluster_id is matched as well as address: wallets sharing a cluster
+        # were co-spent and therefore belong to the same operator, and the
+        # cluster id is usually what an analyst has in hand after a chain
+        # analysis pass. Address-only matching meant that link returned
+        # nothing.
+        wallets = db.query(Wallet).filter(
+            or_(Wallet.address.ilike(pattern), Wallet.cluster_id.ilike(pattern))
+        ).limit(limit).all()
         for w in wallets:
             actor = db.query(Actor).filter_by(id=w.actor_id).first()
             label = actor.primary_alias if actor else w.actor_id
@@ -189,6 +199,44 @@ class OpenSearchService:
                 source_uri=e.source_uri or "netrax://evidence",
                 confidence=float(e.confidence or 0.8),
                 provenance_hash=e.source_uri or "N/A"
+            ))
+
+        # 6. Search Accounts (forum / jabber handles)
+        #
+        # Restored during the merge that brought this hybrid service in. The
+        # relational search it replaced covered accounts and onion services;
+        # without them, searching a shared handle like "nightowl99" -- one
+        # operator reusing a name across differently-named personas -- returned
+        # nothing. That link is precisely the finding this product exists to
+        # surface, so it must stay findable from the search bar whether or not
+        # OpenSearch happens to be provisioned.
+        accounts = db.query(Account).filter(Account.handle.ilike(pattern)).limit(limit).all()
+        for acc in accounts:
+            actor = db.query(Actor).filter_by(id=acc.actor_id).first()
+            label = actor.primary_alias if actor else acc.actor_id
+            results.append(SearchResultItem(
+                entity_id=acc.id,
+                entity_type="ACCOUNT",
+                title=f"Account: {acc.handle}",
+                snippet=f"Handle '{acc.handle}' on {acc.platform} linked to '{label}'",
+                source_uri=f"netrax://account/{acc.id}",
+                confidence=float(getattr(acc, "confidence", None) or 0.85),
+                provenance_hash=acc.id,
+            ))
+
+        # 7. Search Onion Services
+        onions = db.query(OnionService).filter(
+            or_(OnionService.onion_address.ilike(pattern), OnionService.title.ilike(pattern))
+        ).limit(limit).all()
+        for o in onions:
+            results.append(SearchResultItem(
+                entity_id=o.id,
+                entity_type="ONION_SERVICE",
+                title=f"Onion: {o.onion_address}",
+                snippet=f"{o.title or 'untitled'} | favicon mmh3 {o.favicon_mmh3}",
+                source_uri=f"netrax://onion/{o.id}",
+                confidence=0.88,
+                provenance_hash=o.id,
             ))
 
         # Truncate to specified limit

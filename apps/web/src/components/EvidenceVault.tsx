@@ -2,7 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import { FileText, Hash, ExternalLink, Filter, Trash2, Globe, Plus } from "lucide-react";
+import { ModuleHeader } from "./ModuleHeader";
 import { apiFetch } from "../lib/api";
+import { SkeletonTable } from "./viz/Skeleton";
 
 interface EvidenceVaultProps {
   onOpenIngestionModal?: () => void;
@@ -65,27 +67,23 @@ export const EvidenceVault: React.FC<EvidenceVaultProps> = ({ onOpenIngestionMod
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center border-b border-netra-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide flex items-center space-x-2">
-            <FileText className="w-6 h-6 text-netra-cyan" />
-            <span>Immutable Evidence Vault</span>
-          </h1>
-          <p className="text-xs text-netra-muted mt-0.5">
-            Authoritative Ledger of Extracted Artifacts, Source URIs & SHA-256 Hashes
-          </p>
-        </div>
-
-        {onOpenIngestionModal && (
-          <button
-            onClick={onOpenIngestionModal}
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-netra-cyan text-netra-bg hover:bg-netra-cyan/90 font-bold text-xs shadow-lg transition"
-          >
-            <Globe className="w-4 h-4" />
-            <span>Ingest New Darknet Payload</span>
-          </button>
-        )}
-      </div>
+      <ModuleHeader
+        code="06"
+        icon={FileText}
+        title="Evidence Vault"
+        brief="Authoritative ledger of extracted artifacts, source URIs and SHA-256 digests."
+        actions={
+          onOpenIngestionModal && (
+            <button
+              onClick={onOpenIngestionModal}
+              className="h-9 px-4 bg-netra-purple text-netra-bg font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center gap-2 hover:bg-netra-text transition-colors"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Ingest Payload</span>
+            </button>
+          )
+        }
+      />
 
       {error && (
         <div className="border border-netra-red/50 bg-netra-red/10 text-netra-red text-xs font-mono px-4 py-3 rounded-lg">
@@ -95,7 +93,7 @@ export const EvidenceVault: React.FC<EvidenceVaultProps> = ({ onOpenIngestionMod
 
       <div className="bg-netra-card border border-netra-border rounded-xl p-5 space-y-4">
         {loading ? (
-          <div className="p-8 text-netra-muted text-sm font-mono animate-pulse">Loading Evidence Ledger...</div>
+          <SkeletonTable rows={9} label="Loading evidence ledger" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-mono">

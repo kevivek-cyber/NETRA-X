@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SIH26151 Competitors</title>
+<style>
+@page { size: A4 landscape; margin: 9mm 9mm; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  color: #14181f;
+  font-size: 9pt;
+}
+h1 {
+  font-size: 15pt; margin: 0 0 .8mm 0; letter-spacing: -.02em;
+}
+.sub {
+  font-size: 8pt; color: #5b6470; margin: 0 0 3mm 0;
+  padding-bottom: 2mm; border-bottom: 2px solid #1E86A3;
+}
+table { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
+th {
+  background: #12303c; color: #fff; text-align: left;
+  padding: 1.6mm 2.2mm; font-size: 7.9pt; font-weight: 650;
+  border: 1px solid #12303c;
+}
+td {
+  padding: 1.05mm 2.2mm; border: 1px solid #d8dde3;
+  vertical-align: top; line-height: 1.3; font-size: 8.1pt;
+}
+tr:nth-child(even) td { background: #fafbfc; }
+tr.ours td {
+  background: #e7f5ec !important; font-weight: 600;
+  border-top: 2px solid #2F7A45; border-bottom: 2px solid #2F7A45;
+}
+.n { font-family: "SF Mono", Consolas, monospace; font-weight: 700; text-align: center; }
+code { font-family: "SF Mono", Consolas, monospace; font-size: 7.6pt;
+       background: #eef1f4; padding: .3mm 1mm; border-radius: 2px; }
+.hi  { color: #B02A26; font-weight: 700; text-align: center; }
+.med { color: #B45309; font-weight: 700; text-align: center; }
+.lo  { color: #5b6470; font-weight: 600; text-align: center; }
+.none{ color: #8a929c; font-weight: 600; text-align: center; }
+.us  { color: #2F7A45; font-weight: 700; text-align: center; }
+.foot {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm;
+}
+.foot div {
+  border: 1px solid #d8dde3; border-left: 3px solid #1E86A3;
+  padding: 2mm 2.8mm; font-size: 7.6pt; background: #f7fbfc;
+}
+.foot .g { border-left-color: #2F7A45; background: #f2f9f4; }
+.foot .r { border-left-color: #B02A26; background: #fdf3f2; }
+.foot b { display: block; font-size: 7.4pt; letter-spacing: .1em;
+          text-transform: uppercase; margin-bottom: 1.5mm;
+          font-family: "SF Mono", Consolas, monospace; }
+.foot ul { margin: 0; padding-left: 4mm; }
+.foot li { margin-bottom: .5mm; }
+</style>
+</head>
+<body>
+
+<h1>SIH26151 — Competitive Landscape</h1>
+<div class="sub">All 16 public GitHub repositories on Dark Web Threat Actor De-anonymization · NTRO · verified September 2026</div>
+
+<table>
+<thead>
+<tr>
+  <th style="width:4%">#</th>
+  <th style="width:20%">Repository</th>
+  <th style="width:25%">Stack</th>
+  <th style="width:27%">Scoring method</th>
+  <th style="width:14%">Tests / maturity</th>
+  <th style="width:10%">Threat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td class="n">1</td>
+  <td><b>sharan112212/darkweb</b></td>
+  <td>Python, Streamlit, FastAPI, Postgres, Neo4j, MinIO, Tor</td>
+  <td>Noisy-OR &nbsp;<code>P = 1 − ∏(1−wᵢ)</code><br>4 categories, caps, 5 tiers</td>
+  <td><b>238 tests</b></td>
+  <td class="hi">HIGH</td>
+</tr>
+<tr>
+  <td class="n">2</td>
+  <td><b>bhedanikhilkumar-code/<br>SENTINEL-X</b></td>
+  <td>FastAPI, Postgres 16, Neo4j 5.18, Redis, ChromaDB, Celery, React, Cytoscape</td>
+  <td>Multi-vector <code>C_total</code><br>SBERT 384-D, UTXO peel-chains</td>
+  <td>pytest + CI/CD<br>41 commits</td>
+  <td class="hi">HIGH</td>
+</tr>
+<tr>
+  <td class="n">3</td>
+  <td><b>AnuAnsh17/DRISHTI</b></td>
+  <td>Python, plugin collectors, temporal graph</td>
+  <td>Fellegi–Sunter + Dempster–Shafer</td>
+  <td><b>None published</b></td>
+  <td class="hi">HIGH</td>
+</tr>
+<tr class="ours">
+  <td class="n">4</td>
+  <td><b>NETRA-X &nbsp;(ours)</b></td>
+  <td>FastAPI, SQLite/Postgres, Neo4j, Next.js 14, Cytoscape</td>
+  <td>Fellegi–Sunter LLR<br>+ λ = 0.25 discount + family caps + uncapped contradictions</td>
+  <td>115 tests<br>reproducible bench</td>
+  <td class="us">OURS</td>
+</tr>
+<tr>
+  <td class="n">5</td>
+  <td>Driven-Ansh/traceforge</td>
+  <td>FastAPI, NetworkX, React, Cytoscape, Render</td>
+  <td>Weighted linear — PGP .25, UTXO .20, stylometry .18, heatmap .15, infra .12</td>
+  <td>5 scenarios<br>claims 94.2% P</td>
+  <td class="med">MED</td>
+</tr>
+<tr>
+  <td class="n">6</td>
+  <td>rohantiwari9573/SIH-26 "Argus"</td>
+  <td>Python</td>
+  <td>Not disclosed</td>
+  <td>Unknown</td>
+  <td class="med">MED</td>
+</tr>
+<tr>
+  <td class="n">7</td>
+  <td>hocuspocus07/argus</td>
+  <td>Python</td>
+  <td>"Autonomous" correlation — not disclosed</td>
+  <td>Unknown</td>
+  <td class="med">MED</td>
+</tr>
+<tr>
+  <td class="n">8</td>
+  <td>kalees-bytes/SIH26151</td>
+  <td>Flask + Streamlit</td>
+  <td><code>0.30·infra + 0.40·identity + 0.30·stylometry</code></td>
+  <td>0 tests<br>2 commits</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">9</td>
+  <td>xarjunpatil/SIH26151</td>
+  <td>FastAPI, PostGIS, Chart.js, Docker</td>
+  <td>"AI anomaly scoring" — unspecified</td>
+  <td>1 commit</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">10</td>
+  <td>siddharthreddy432/CipherForge</td>
+  <td>React, Express, in-memory graph (no persistence)</td>
+  <td>"Evidence ledger" — no formula</td>
+  <td>2 commits</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">11</td>
+  <td>kd20072348-arch/<br>NTRO-crypto-tracing</td>
+  <td>MCP server, Node, TypeScript</td>
+  <td>Not disclosed — blockchain only</td>
+  <td>13 commits</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">12</td>
+  <td>fayaaz01/Dark-Shark</td>
+  <td>Static HTML + workflows</td>
+  <td>Not disclosed</td>
+  <td>17 commits</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">13</td>
+  <td>BlackCoffeeCode/DarkTrace</td>
+  <td>Not disclosed</td>
+  <td>Not disclosed</td>
+  <td>Unknown</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">14</td>
+  <td>swaroop-reddy7/Darktrace</td>
+  <td>Python</td>
+  <td>Not disclosed</td>
+  <td>Unknown</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">15</td>
+  <td>siddharthreddy432/CipherForge <span style="color:#8a929c">(2nd repo)</span></td>
+  <td>TypeScript</td>
+  <td>Duplicate of #10</td>
+  <td>—</td>
+  <td class="lo">LOW</td>
+</tr>
+<tr>
+  <td class="n">16</td>
+  <td>Tiruvadhi-Chiruhasini/trace</td>
+  <td colspan="2"><b>Repository is empty</b> — description only</td>
+  <td>0 commits</td>
+  <td class="none">NONE</td>
+</tr>
+</tbody>
+</table>
+
+<div class="foot">
+  <div class="g">
+    <b>Unique to us</b>
+    Dependence discounting (λ = 0.25). <b>No other repository implements it.</b>
+    Every scoring method found — Noisy-OR, weighted sums, unstated — assumes
+    evidence is independent, so a reused wallet and its co-spend cluster count twice.
+  </div>
+  <div class="r">
+    <b>Where we trail</b>
+    <ul>
+      <li>Tests — 115 vs 238</li>
+      <li>Semantic model — untrained vs MiniLM / SBERT</li>
+      <li>RBAC stored but not enforced</li>
+      <li>No CI workflow (slide claims one)</li>
+      <li>Tor testbed outside the repo</li>
+    </ul>
+  </div>
+  <div>
+    <b>Fixes before submission</b>
+    <ul>
+      <li>Enforce RBAC — ~1 hour</li>
+      <li>Add CI workflow — ~30 min</li>
+      <li>Commit Tor testbed — ~15 min</li>
+      <li>Swap in MiniLM — ~1 day</li>
+    </ul>
+    First three: under two hours total.
+  </div>
+</div>
+
+</body>
+</html>

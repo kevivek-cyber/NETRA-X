@@ -82,7 +82,7 @@ export const CopilotDrawer: React.FC<CopilotDrawerProps> = ({ isOpen, onClose })
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-netra-card border-l border-netra-border z-50 flex flex-col shadow-2xl glass-panel font-sans">
+    <div className="fixed inset-y-0 right-0 w-96 bg-netra-card border-l border-netra-border z-50 flex flex-col glass-panel font-sans">
       {/* Header */}
       <div className="p-4 border-b border-netra-border flex items-center justify-between bg-netra-surface">
         <div className="flex items-center space-x-2">

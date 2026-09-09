@@ -14,11 +14,18 @@
  */
 
 function resolveApiBase(): string {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
-  }
-  if (typeof window !== "undefined" && window.location.hostname.includes("onrender")) {
-    return "https://netra-x.onrender.com";
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured) {
+    const base = configured.replace(/\/+$/, "");
+    // Render's blueprint injects this via `fromService … property: host`, which
+    // yields a bare hostname ("netra-api.onrender.com") with no scheme. Used
+    // as-is that produces a *relative* fetch URL, so every request resolved
+    // against the frontend's own origin and 404'd -- the deployed app could
+    // not reach its API at all. Anything without a scheme gets https, except
+    // localhost, which is served over http in development.
+    if (/^https?:\/\//i.test(base)) return base;
+    const scheme = /^(localhost|127\.0\.0\.1)(:|$)/i.test(base) ? "http" : "https";
+    return `${scheme}://${base}`;
   }
   return "http://localhost:8000";
 }

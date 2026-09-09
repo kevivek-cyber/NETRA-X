@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { FileSearch, Plus, ShieldCheck, Users, Calendar, Trash2, Archive, Key, Tag } from "lucide-react";
+import { ModuleHeader } from "./ModuleHeader";
 import { useToast } from "./StatusToasts";
 import { apiFetch } from "../lib/api";
+import { SkeletonPanel } from "./viz/Skeleton";
 
 export const CasesView: React.FC = () => {
   const toast = useToast();
@@ -102,29 +104,28 @@ export const CasesView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center border-b border-netra-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white tracking-wide flex items-center space-x-2">
-            <FileSearch className="w-6 h-6 text-netra-purple" />
-            <span>Investigation Cases</span>
-          </h1>
-          <p className="text-xs text-netra-muted mt-0.5">
-            Object-Level ACL Case Management & Evidence Container Scope
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-netra-purple text-netra-bg hover:bg-netra-purple/80 font-medium text-xs shadow-lg transition"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Investigation Case</span>
-        </button>
-      </div>
+      <ModuleHeader
+        code="02"
+        icon={FileSearch}
+        title="Investigations"
+        brief="Object-level ACL case management and evidence container scope."
+        actions={
+          <button
+            onClick={() => setShowModal(true)}
+            className="h-9 px-4 bg-netra-purple text-netra-bg font-mono text-[10px] font-bold uppercase tracking-telemetry flex items-center gap-2 hover:bg-netra-text transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Case</span>
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-4">
         {loading ? (
-          <div className="p-8 text-netra-muted text-sm font-mono animate-pulse col-span-2">Loading Investigation Cases...</div>
+          <>
+            <SkeletonPanel lines={4} label="Loading investigation cases" />
+            <SkeletonPanel lines={4} />
+          </>
         ) : (
           cases.map((c) => (
             <div key={c.id} className="bg-netra-card border border-netra-border hover:border-netra-purple/50 rounded-xl p-5 space-y-3 transition glass-panel">
@@ -188,8 +189,8 @@ export const CasesView: React.FC = () => {
 
       {/* Add Identifier Modal */}
       {showIdentifierModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-netra-card border border-netra-border rounded-xl p-6 w-full max-w-md space-y-4 shadow-2xl glass-panel">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-netra-card border border-netra-border rounded-xl p-6 w-full max-w-md space-y-4 glass-panel">
             <h3 className="text-base font-bold text-white border-b border-netra-border pb-2 flex items-center space-x-2">
               <Key className="w-5 h-5 text-netra-purple" />
               <span>Add Identifier to Investigation</span>
@@ -244,8 +245,8 @@ export const CasesView: React.FC = () => {
 
       {/* New Case Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-netra-card border border-netra-border rounded-xl p-6 w-full max-w-md space-y-4 shadow-2xl glass-panel">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-netra-card border border-netra-border rounded-xl p-6 w-full max-w-md space-y-4 glass-panel">
             <h3 className="text-base font-bold text-white border-b border-netra-border pb-2">
               Create New Investigation Case
             </h3>

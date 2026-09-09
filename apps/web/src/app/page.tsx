@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { apiFetch, getAuthToken, setAuthToken } from "../lib/api";
 import { LoginScreen } from "../components/LoginScreen";
 import { AppShell } from "../components/AppShell";
+import { BootSequence } from "../components/BootSequence";
 import { CommandCenter } from "../components/CommandCenter";
 import { ActorProfile } from "../components/ActorProfile";
 import { AttributionLab } from "../components/AttributionLab";
@@ -25,6 +26,22 @@ export default function Home() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isIngestionModalOpen, setIsIngestionModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  /**
+   * The preflight runs on every launch -- a fresh sign-in and a restored
+   * session alike.
+   *
+   * It originally ran only after sign-in, on the reasoning that an analyst
+   * reloading mid-investigation should not be made to watch a boot screen.
+   * That was wrong for the shape this actually ships in: the desktop window
+   * keeps its token, so every launch after the first restored a session and
+   * skipped straight past the preflight. The screen effectively never ran, and
+   * the one moment its checks are most worth seeing -- a cold start, before
+   * any work is done -- was the exact moment it was suppressed.
+   *
+   * ESC still skips it, so the reload case costs a keypress rather than a
+   * design compromise.
+   */
+  const [booting, setBooting] = useState(false);
 
   useEffect(() => {
     async function checkSession() {
@@ -36,6 +53,7 @@ export default function Home() {
       try {
         const u = await apiFetch<any>("/api/v1/auth/me");
         setUser(u);
+        setBooting(true);
       } catch (err) {
         console.error("Session invalid", err);
         setAuthToken("");
@@ -45,6 +63,11 @@ export default function Home() {
     }
     checkSession();
   }, []);
+
+  const handleLoginSuccess = (u: any) => {
+    setUser(u);
+    setBooting(true);
+  };
 
   const handleNavigate = (view: string, targetId?: string) => {
     setCurrentView(view);
@@ -59,15 +82,36 @@ export default function Home() {
   };
 
   if (loading) {
+    // First paint, before the session check resolves. This is the very first
+    // thing drawn on a cold start, so it uses the same console language as
+    // everything after it rather than a centred pulsing sentence.
     return (
-      <div className="min-h-screen bg-netra-bg flex items-center justify-center font-mono text-xs text-netra-purple animate-pulse">
-        Initializing NETRA-X Intelligence Interface...
+      <div className="min-h-screen bg-netra-bg flex items-center justify-center p-6">
+        <div className="absolute inset-0 blueprint-bg pointer-events-none" aria-hidden="true" />
+        <div className="relative border border-netra-border bg-netra-card px-6 py-5 min-w-[300px]">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-1.5 h-1.5 bg-netra-purple live-dot" />
+            <span className="telemetry-label text-netra-text">Initializing</span>
+          </div>
+          <p className="font-mono text-[11px] text-netra-muted">
+            Resolving operator session
+            <span className="caret-blink">_</span>
+          </p>
+          <div className="mt-4 h-px w-full bg-netra-border" />
+          <p className="mt-3 telemetry-label">NETRA-X / Tactical Telemetry</p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
-    return <LoginScreen onLoginSuccess={(u) => setUser(u)} />;
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (booting) {
+    return (
+      <BootSequence operator={user.email} onComplete={() => setBooting(false)} />
+    );
   }
 
   return (

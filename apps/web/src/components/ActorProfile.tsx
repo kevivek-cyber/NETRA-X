@@ -8,6 +8,7 @@ import {
 import { useToast } from "./StatusToasts";
 import { apiFetch } from "../lib/api";
 import { CryptoUTXOVisualizer } from "./CryptoUTXOVisualizer";
+import { SkeletonPanel, SkeletonTiles } from "./viz/Skeleton";
 
 interface ActorProfileProps {
   actorId?: string;
@@ -49,7 +50,13 @@ export const ActorProfile: React.FC<ActorProfileProps> = ({
   }, [actorId]);
 
   if (loading || !actor) {
-    return <div className="p-8 text-netra-muted text-sm font-mono animate-pulse">Loading Threat Actor Intelligence Profile...</div>;
+    return (
+      <div className="space-y-5">
+        <SkeletonPanel lines={3} label="Loading threat actor profile" />
+        <SkeletonTiles count={4} />
+        <SkeletonPanel lines={6} />
+      </div>
+    );
   }
 
   return (

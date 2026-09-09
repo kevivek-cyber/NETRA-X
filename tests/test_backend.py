@@ -315,3 +315,45 @@ def test_api_attribution_waterfall_endpoint(test_client):
     assert "ascii_diagram" in data
     assert "markdown_report" in data
 
+
+def _search(test_client, q):
+    login_resp = test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "analyst@netra-x.local", "password": "AnalystPass2026!"}
+    )
+    token = login_resp.json()["access_token"]
+    resp = test_client.get(
+        "/api/v1/search", params={"q": q},
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status_code == 200
+    return resp.json()
+
+
+def test_api_search_finds_a_shared_handle_across_aliases_and_accounts(test_client):
+    # "ShadowByte" is a primary alias, a raw Alias row, and an Account handle
+    # in the seed data -- previously only the Actor row (matched on primary
+    # alias) was searchable, so an analyst pivoting off a handle seen in a
+    # post or account listing got zero results.
+    data = _search(test_client, "ShadowByte")
+    entity_types = {r["entity_type"] for r in data["results"]}
+    assert "ACTOR_ALIAS" in entity_types
+    assert "ACCOUNT" in entity_types
+
+
+def test_api_search_finds_a_secondary_alias_not_on_the_actor_record(test_client):
+    # "CipherVoid" only exists as a secondary Alias row, never as an Actor's
+    # primary_alias -- this is exactly the identifier the old actors-only
+    # search could never surface.
+    data = _search(test_client, "CipherVoid")
+    assert any(r["entity_type"] == "ACTOR_ALIAS" for r in data["results"])
+
+
+def test_api_search_finds_wallets_by_cluster_id(test_client):
+    # Wallets sharing a cluster_id belong to the same actor and were only
+    # matchable by exact address before; searching the cluster id itself
+    # (the co-spend link an analyst actually has in hand) returned nothing.
+    data = _search(test_client, "CLUSTER_SB_01")
+    wallets = [r for r in data["results"] if r["entity_type"] == "CRYPTO_WALLET"]
+    assert len(wallets) >= 2
+
