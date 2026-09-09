@@ -9,9 +9,22 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::net::TcpStream;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+/// CREATE_NO_WINDOW -- suppress the console Windows would otherwise allocate
+/// for a console-subsystem child started by a GUI process.
+///
+/// python.exe is a console application. Launching it from this window meant
+/// Windows opened a terminal for it and left it there for the life of the app:
+/// a second window beside the console the user actually wanted, showing
+/// uvicorn's log. Making the shell itself windows-subsystem does not help --
+/// the console belongs to the *child*, not to us.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 use tauri::{Manager, RunEvent};
 
@@ -50,10 +63,14 @@ fn spawn_api(resource_dir: &std::path::Path) -> std::io::Result<Child> {
     let app_dir = resource_dir.join("resources").join("app");
     let entrypoint = app_dir.join("apps").join("api").join("desktop_main.py");
 
-    Command::new(python)
-        .arg(entrypoint)
-        .current_dir(app_dir)
-        .spawn()
+    let mut cmd = Command::new(python);
+    cmd.arg(entrypoint).current_dir(app_dir);
+
+    // Without this the backend gets its own terminal window next to the app.
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    cmd.spawn()
 }
 
 fn wait_for_api(timeout: Duration) -> bool {
@@ -81,6 +98,22 @@ fn main() {
                 .path_resolver()
                 .resource_dir()
                 .expect("failed to resolve resource dir");
+
+            // Fill the screen on open.
+            //
+            // `"maximized": true` in tauri.conf.json is the documented way to
+            // do this and the field exists in this version, but it does not
+            // take effect on Windows here -- the window came up 1454x882 on a
+            // 1536x816 work area with IsZoomed reporting false. Applying it to
+            // the live window instead is deterministic, and it runs before the
+            // window is shown so there is no visible resize.
+            //
+            // Failure is ignored on purpose: a window that opens at its
+            // configured size is a cosmetic problem, not a reason to abort
+            // start-up and leave the analyst with no console at all.
+            if let Some(window) = app.get_window("main") {
+                let _ = window.maximize();
+            }
 
             match spawn_api(&resource_dir) {
                 Ok(child) => {
