@@ -92,6 +92,93 @@ class UTXOCoSpendingClusterer:
         return cluster_map
 
     @staticmethod
+    def trace_mixer_hops(
+        transactions: List[Dict[str, Any]],
+        start_address: str,
+        max_hops: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Trace multi-input co-spending wallet hops and identify Bitcoin / Monero mixer service touchpoints.
+        """
+        visited_addresses = {start_address}
+        queue = [(start_address, 0)]
+        hops_trace = []
+        mixer_touchpoints = []
+
+        # Known mixer address patterns or tagged service addresses
+        mixer_patterns = ["mixer", "tumbler", "coinjoin", "chipmixer", "blender", "wasabi", "samourai"]
+
+        while queue:
+            curr_addr, hop_count = queue.pop(0)
+            if hop_count >= max_hops:
+                continue
+
+            for tx in transactions:
+                inputs = tx.get("inputs", [])
+                outputs = tx.get("outputs", [])
+
+                if curr_addr in inputs:
+                    for out_addr in outputs:
+                        if out_addr not in visited_addresses:
+                            visited_addresses.add(out_addr)
+                            queue.append((out_addr, hop_count + 1))
+                            is_mixer = any(p in out_addr.lower() for p in mixer_patterns)
+                            if is_mixer:
+                                mixer_touchpoints.append({"address": out_addr, "hop": hop_count + 1})
+
+                            hops_trace.append({
+                                "from_address": curr_addr,
+                                "to_address": out_addr,
+                                "txid": tx.get("txid", "tx_simulated"),
+                                "hop_depth": hop_count + 1,
+                                "is_mixer_hop": is_mixer
+                            })
+
+        return {
+            "start_address": start_address,
+            "total_addresses_reached": len(visited_addresses),
+            "max_depth_searched": max_hops,
+            "mixer_touchpoints_found": len(mixer_touchpoints),
+            "mixer_touchpoints": mixer_touchpoints,
+            "trace": hops_trace
+        }
+
+    @staticmethod
+    def calculate_cluster_risk_score(
+        cluster_id: str,
+        transactions: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Calculate financial risk profile and mixer exposure score for a UTXO wallet cluster.
+        """
+        cluster_addresses = set()
+        total_volume = 0.0
+        mixer_hops_count = 0
+
+        for tx in transactions:
+            inputs = tx.get("inputs", [])
+            outputs = tx.get("outputs", [])
+            val = float(tx.get("amount_btc", 1.0))
+            total_volume += val
+
+            for addr in inputs + outputs:
+                if cluster_id in addr or addr.startswith("cluster_"):
+                    cluster_addresses.add(addr)
+                if any(p in addr.lower() for p in ["mixer", "tumbler", "coinjoin", "wasabi"]):
+                    mixer_hops_count += 1
+
+        risk_score = min(1.0, (mixer_hops_count * 0.35) + (len(cluster_addresses) * 0.05))
+
+        return {
+            "cluster_id": cluster_id,
+            "total_addresses": len(cluster_addresses),
+            "estimated_volume_btc": round(total_volume, 4),
+            "mixer_exposure_count": mixer_hops_count,
+            "risk_score": round(risk_score, 2),
+            "risk_level": "HIGH" if risk_score > 0.6 else "MEDIUM" if risk_score > 0.3 else "LOW"
+        }
+
+    @staticmethod
     def classify_monero_privacy_tx(tx_dict: Dict[str, Any]) -> Dict[str, Any]:
         """
         Evaluates Monero (XMR) stealth address structure, RingCT ring size, and key image hashes.

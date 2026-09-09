@@ -40,6 +40,7 @@ from packages.attribution.financial import (
     build_utxo_clusters,
     evaluate_wallet_evidence,
 )
+from packages.attribution.neural_stylometry import NeuralStylometryEngine
 from packages.attribution.reporting import (
     AttributionReportFormatter,
     build_waterfall_breakdown,
@@ -68,6 +69,7 @@ __all__ = [
     "build_waterfall_breakdown",
     "format_ascii_waterfall",
     "format_markdown_report",
+    "NeuralStylometryEngine",
 ]
 
 

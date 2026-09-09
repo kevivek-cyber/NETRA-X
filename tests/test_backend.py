@@ -337,8 +337,8 @@ def test_api_search_finds_a_shared_handle_across_aliases_and_accounts(test_clien
     # post or account listing got zero results.
     data = _search(test_client, "ShadowByte")
     entity_types = {r["entity_type"] for r in data["results"]}
-    assert "Actor" in entity_types
-    assert "Alias" in entity_types
+    assert "ACTOR_ALIAS" in entity_types
+    assert "ACCOUNT" in entity_types
 
 
 def test_api_search_finds_a_secondary_alias_not_on_the_actor_record(test_client):
@@ -346,7 +346,7 @@ def test_api_search_finds_a_secondary_alias_not_on_the_actor_record(test_client)
     # primary_alias -- this is exactly the identifier the old actors-only
     # search could never surface.
     data = _search(test_client, "CipherVoid")
-    assert any(r["entity_type"] == "Alias" for r in data["results"])
+    assert any(r["entity_type"] == "ACTOR_ALIAS" for r in data["results"])
 
 
 def test_api_search_finds_wallets_by_cluster_id(test_client):
@@ -354,6 +354,6 @@ def test_api_search_finds_wallets_by_cluster_id(test_client):
     # matchable by exact address before; searching the cluster id itself
     # (the co-spend link an analyst actually has in hand) returned nothing.
     data = _search(test_client, "CLUSTER_SB_01")
-    wallets = [r for r in data["results"] if r["entity_type"] == "Wallet"]
+    wallets = [r for r in data["results"] if r["entity_type"] == "CRYPTO_WALLET"]
     assert len(wallets) >= 2
 

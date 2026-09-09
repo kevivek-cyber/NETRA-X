@@ -171,7 +171,15 @@ def append_audit_event(
             created_at=created_at,
         )
         session.add(entry)
+
         try:
+            from apps.api.metrics import metrics_collector
+            metrics_collector.record_audit_event()
+        except Exception:
+            pass
+
+        try:
+
             session.flush()
             return entry
         except IntegrityError as exc:

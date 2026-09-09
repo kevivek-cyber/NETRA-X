@@ -6,6 +6,7 @@ evidence ledger querying, attribution hypothesis evaluation, analyst review, and
 
 import json
 import os
+import base64
 import hashlib
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -25,21 +26,35 @@ from packages.evidence.attribution import (
 )
 from packages.evidence.reporting import generate_pdf_report
 from packages.evidence.stix_export import generate_stix_bundle, generate_csv_export
+from packages.evidence.rbac import require_roles
 from packages.graph.projection import GraphProjectionService
+from packages.search.opensearch_client import opensearch_service
 from packages.schemas.models import (
     LoginRequest, TokenResponse, UserResponse, ActorSchema, AliasSchema,
     PGPKeySchema, WalletSchema, OnionServiceSchema, EvidenceSchema,
     EvidenceWaterfallItem, HypothesisSchema, ReviewRequest, AuditLogSchema,
     SearchResponse, SearchResultItem, CaseCreate, CaseResponse, DecisionEnum,
     CaseIdentifierCreate, CaseIdentifierResponse,
-    HypothesisStatus, IngestRequest, IngestResponse, ExtractedEvidence
+    HypothesisStatus, IngestRequest, IngestResponse, ExtractedEvidence,
+    BackupResponse, ReprojectResponse, RoleName,
+    ProbeScanRequest, ProbeScanResponse, WarcCollectionRequest, WarcCollectionResponse,
+    NeuralStylometryRequest, NeuralStylometryResponse,
+    FinancialClusterTraceRequest, FinancialClusterTraceResponse
 )
+from packages.attribution import NeuralStylometryEngine, UTXOCoSpendingClusterer
+from workers.collection import (
+    OnionProbeEngine, WARCWriter, ImmutableArtifact, MinIOArtifactStorage,
+    event_bus, RedisEventBus
+)
+from apps.api.metrics import MetricsMiddleware, metrics_collector
 from apps.api.database.session import SyncSessionLocal, init_db_sync
 from apps.api.database.models import (
     User, Case, CaseMember, CaseIdentifier, Actor, Alias, Account, PGPKey, Wallet,
     OnionService, Server, Artifact, Evidence, Hypothesis, HypothesisEvidence,
     AnalystReview, AuditLog, Source, Observation
 )
+from workers.maintenance.backup_worker import DatabaseBackupWorker
+from workers.maintenance.graph_reproject_worker import GraphReprojectionWorker
 
 app = FastAPI(
     title="NETRA-X Intelligence API",
@@ -65,6 +80,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+app.add_middleware(MetricsMiddleware)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -153,6 +170,16 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "platform": "NETRA-X MVP v0.1", "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.get("/metrics")
+def get_prometheus_metrics():
+    """Expose standard Prometheus metrics format for observability monitoring."""
+    return Response(
+        content=metrics_collector.generate_prometheus_text(),
+        media_type="text/plain; version=0.0.4"
+    )
+
 
 
 # --- AUTH ENDPOINTS ---
@@ -1032,6 +1059,7 @@ def evaluate_attribution_on_demand(raw_items: List[Dict[str, Any]], current_user
             contradiction_type=item.get("contradiction_type", ""),
             abstain=bool(item.get("abstain", False))
         ))
+    metrics_collector.record_llr_evaluation()
     res = compute_attribution(evidence_inputs)
     return {
         "raw_log_lr": res.raw_log_lr,
@@ -1218,107 +1246,14 @@ def archive_case(id: str, db: Session = Depends(get_db), current_user: User = De
 
 # --- SEARCH ---
 @app.get("/api/v1/search", response_model=SearchResponse)
-def search_entities(q: str = Query(..., min_length=2), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Search the ledger for anything matching `q`.
-
-    This covered actors by primary alias, PGP keys and wallet addresses, and
-    nothing else -- so searching a shared handle like "nightowl99" returned no
-    results at all, and neither did a cluster id. Those are exactly the
-    identifiers the product exists to surface: one operator reusing a handle
-    across differently-named personas is the finding, and it was unfindable
-    from the search bar.
-
-    Aliases, account handles, wallet clusters and onion services are included,
-    and an identifier held by more than one actor says so in its snippet.
-    """
-    results = []
-    term = f"%{q}%"
-
-    def digest(x: str) -> str:
-        return hashlib.sha256(x.encode()).hexdigest()
-
-    # Actors
-    for a in db.query(Actor).filter(
-            or_(Actor.primary_alias.ilike(term), Actor.category.ilike(term))).all():
-        results.append(SearchResultItem(
-            entity_id=a.id, entity_type="Actor",
-            title=f"Actor: {a.primary_alias}",
-            snippet=f"Category: {a.category} | Confidence: {a.confidence * 100:.0f}%",
-            source_uri="database://actors", confidence=a.confidence,
-            provenance_hash=digest(a.id)))
-
-    # Aliases -- the reuse the product is built to find.
-    for al in db.query(Alias).filter(Alias.value.ilike(term)).all():
-        owners = db.query(Alias).filter(func.lower(Alias.value) == al.value.lower()).all()
-        actor_ids = {o.actor_id for o in owners}
-        owner = db.query(Actor).filter_by(id=al.actor_id).first()
-        shared = len(actor_ids) > 1
-        names = []
-        if shared:
-            names = [x.primary_alias for x in
-                     db.query(Actor).filter(Actor.id.in_(actor_ids)).all()]
-        results.append(SearchResultItem(
-            entity_id=al.actor_id, entity_type="Alias",
-            title=f"Handle: {al.value}",
-            snippet=(f"SHARED by {len(actor_ids)} actors: {', '.join(names)}" if shared
-                     else f"Used by {owner.primary_alias if owner else 'unknown'}"
-                          f" on {al.platform or 'unknown platform'}"),
-            source_uri="database://aliases", confidence=al.confidence,
-            provenance_hash=digest(al.id)))
-
-    # Account handles
-    for ac in db.query(Account).filter(
-            or_(Account.handle.ilike(term), Account.platform.ilike(term))).all():
-        owner = db.query(Actor).filter_by(id=ac.actor_id).first()
-        results.append(SearchResultItem(
-            entity_id=ac.id, entity_type="Account",
-            title=f"Account: {ac.handle}",
-            snippet=f"{ac.platform} | {owner.primary_alias if owner else 'unattributed'}",
-            source_uri="database://accounts", confidence=0.85,
-            provenance_hash=digest(ac.id)))
-
-    # PGP keys
-    for k in db.query(PGPKey).filter(
-            or_(PGPKey.fingerprint.ilike(term), PGPKey.key_id.ilike(term))).all():
-        results.append(SearchResultItem(
-            entity_id=k.id, entity_type="PGPKey",
-            title=f"PGP Key ID: {k.key_id}",
-            snippet=f"Fingerprint: {k.fingerprint}",
-            source_uri="database://pgp_keys", confidence=0.99,
-            provenance_hash=digest(k.id)))
-
-    # Wallets, by address or by cluster
-    for w in db.query(Wallet).filter(
-            or_(Wallet.address.ilike(term), Wallet.cluster_id.ilike(term),
-                Wallet.chain.ilike(term))).all():
-        co = []
-        if w.cluster_id:
-            sibs = db.query(Wallet).filter(
-                Wallet.cluster_id == w.cluster_id, Wallet.actor_id != w.actor_id).all()
-            co = [x.primary_alias for x in db.query(Actor).filter(
-                Actor.id.in_({s_.actor_id for s_ in sibs})).all()]
-        owner = db.query(Actor).filter_by(id=w.actor_id).first()
-        results.append(SearchResultItem(
-            entity_id=w.id, entity_type="Wallet",
-            title=f"Wallet ({w.chain}): {w.address}",
-            snippet=(f"Cluster {w.cluster_id} | held by "
-                     f"{owner.primary_alias if owner else 'unattributed'}"
-                     + (f" | CO-SPENDS with {', '.join(co)}" if co else "")),
-            source_uri="database://wallets", confidence=0.90,
-            provenance_hash=digest(w.id)))
-
-    # Onion services
-    for o in db.query(OnionService).filter(
-            or_(OnionService.onion_address.ilike(term),
-                OnionService.title.ilike(term))).all():
-        results.append(SearchResultItem(
-            entity_id=o.id, entity_type="OnionService",
-            title=f"Onion: {o.onion_address}",
-            snippet=f"{o.title or 'untitled'} | favicon mmh3 {o.favicon_mmh3}",
-            source_uri="database://onion_services", confidence=0.88,
-            provenance_hash=digest(o.id)))
-
-    return SearchResponse(query=q, total_matches=len(results), results=results)
+def search_entities(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Hybrid OpenSearch & SQL Search Service."""
+    return opensearch_service.search(query_str=q, db=db, limit=limit)
 
 
 # --- EXPORTS & REPORTS ---
@@ -1604,4 +1539,165 @@ def format_evidence_waterfall_report(
         "ascii_diagram": ascii_diagram,
         "markdown_report": markdown_report,
     }
+
+
+# --- MAINTENANCE ENDPOINTS ---
+
+
+@app.post("/api/v1/maintenance/backup", response_model=BackupResponse)
+def create_database_backup(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(RoleName.ADMIN)),
+):
+    """Trigger timestamped database snapshot backup with SHA-256 validation."""
+    worker = DatabaseBackupWorker()
+    return worker.create_backup()
+
+
+@app.post("/api/v1/maintenance/reproject", response_model=ReprojectResponse)
+def reproject_graph_state(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(RoleName.ADMIN, RoleName.INVESTIGATOR)),
+):
+    """Trigger re-projection of SQL database entities into NetworkX graph memory."""
+    worker = GraphReprojectionWorker()
+    return worker.run_reprojection(db)
+
+
+# --- PASSIVE PROBE & COLLECTION PIPELINE ENDPOINTS ---
+@app.post("/api/v1/probes/scan", response_model=ProbeScanResponse)
+def execute_onion_probe(
+    req: ProbeScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Executes passive OnionProbe infrastructure leak footprinting analysis."""
+    favicon_bytes = base64.b64decode(req.favicon_b64) if req.favicon_b64 else b""
+    report = OnionProbeEngine.probe_onion_target(
+        target_url=req.target_url,
+        html_content=req.html_content or "",
+        favicon_bytes=favicon_bytes,
+        headers_dict=req.headers or {},
+        tls_cert_pem=req.tls_cert_pem
+    )
+
+    append_audit_event(
+        session=db,
+        actor_user_id=current_user.id,
+        action="ONION_PROBE_EXECUTIVE",
+        resource_type="PROBE_SCAN",
+        resource_id=req.target_url[:64],
+        payload={"leaks_count": report["total_leaks_found"], "target": req.target_url}
+    )
+    db.commit()
+
+    return ProbeScanResponse(**report)
+
+
+@app.post("/api/v1/collection/warc", response_model=WarcCollectionResponse)
+def collect_warc_artifact(
+    req: WarcCollectionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Converts raw payload to ISO 28500 WARC record, stores artifact, and triggers Redis event bus."""
+    raw_bytes = req.raw_content.encode("utf-8")
+    artifact = ImmutableArtifact(raw_bytes=raw_bytes, source_uri=req.source_uri, content_type=req.content_type or "text/html")
+    warc_bytes = WARCWriter.create_warc_record(artifact)
+
+    storage = MinIOArtifactStorage()
+    stored_meta = storage.store_artifact(artifact, warc_bytes)
+
+    # Publish PAGE_COLLECTED event to Redis Streams bus
+    msg_id = event_bus.publish_event("stream:page_collected", {
+        "source_uri": req.source_uri,
+        "artifact_sha256": artifact.sha256,
+        "warc_sha256": stored_meta["warc_sha256"],
+        "collected_by": current_user.email
+    })
+
+    append_audit_event(
+        session=db,
+        actor_user_id=current_user.id,
+        action="WARC_ARTIFACT_STORED",
+        resource_type="ARTIFACT",
+        resource_id=artifact.sha256,
+        payload={"source_uri": req.source_uri, "warc_sha256": stored_meta["warc_sha256"]}
+    )
+    db.commit()
+
+    return WarcCollectionResponse(
+        warc_record_id=f"<urn:uuid:{artifact.sha256[:32]}>",
+        artifact_sha256=artifact.sha256,
+        warc_sha256=stored_meta["warc_sha256"],
+        file_path=stored_meta["filepath"],
+        file_size_bytes=stored_meta["size_bytes"],
+        stream_msg_id=msg_id,
+        timestamp=artifact.timestamp
+    )
+
+
+# --- ADVANCED INTELLIGENCE & AI UPGRADES (PHASE 5) ---
+@app.post("/api/v1/attribution/neural-stylometry", response_model=NeuralStylometryResponse)
+def evaluate_neural_stylometry(
+    req: NeuralStylometryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Evaluates short-text author verification with confidence abstention thresholds."""
+    res = NeuralStylometryEngine.verify_authorship(
+        text_a=req.text_a,
+        text_b=req.text_b,
+        threshold=req.threshold or 0.65
+    )
+
+    append_audit_event(
+        session=db,
+        actor_user_id=current_user.id,
+        action="NEURAL_STYLOMETRY_EVALUATED",
+        resource_type="STYLOMETRY_VERDICT",
+        resource_id=res["verdict"],
+        payload={"similarity": res["similarity_score"], "verdict": res["verdict"]}
+    )
+    db.commit()
+
+    return NeuralStylometryResponse(**res)
+
+
+@app.post("/api/v1/financial/clusters/trace", response_model=FinancialClusterTraceResponse)
+def trace_financial_cluster_hops(
+    req: FinancialClusterTraceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Traces multi-input UTXO co-spending wallet hops and calculates financial risk profile."""
+    trace_res = UTXOCoSpendingClusterer.trace_mixer_hops(
+        transactions=req.transactions,
+        start_address=req.start_address,
+        max_hops=req.max_hops or 5
+    )
+
+    risk_res = UTXOCoSpendingClusterer.calculate_cluster_risk_score(
+        cluster_id=req.cluster_id or "cluster_btc_main",
+        transactions=req.transactions
+    )
+
+    append_audit_event(
+        session=db,
+        actor_user_id=current_user.id,
+        action="FINANCIAL_MIXER_HOPS_TRACED",
+        resource_type="WALLET_CLUSTER",
+        resource_id=req.start_address[:64],
+        payload={"mixer_touchpoints": trace_res["mixer_touchpoints_found"], "risk_score": risk_res["risk_score"]}
+    )
+    db.commit()
+
+    return FinancialClusterTraceResponse(
+        trace=trace_res,
+        risk_profile=risk_res,
+        timestamp=datetime.utcnow().isoformat() + "Z"
+    )
+
+
+
 

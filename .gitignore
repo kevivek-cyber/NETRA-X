@@ -47,6 +47,8 @@ postgres_data/
 neo4j_data/
 opensearch_data/
 redis_data/
+storage/
+backups/
 
 # IDE & OS
 .DS_Store
