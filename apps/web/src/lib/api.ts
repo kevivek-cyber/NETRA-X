@@ -15,19 +15,36 @@
 
 function resolveApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (configured) {
-    const base = configured.replace(/\/+$/, "");
-    // Render's blueprint injects this via `fromService … property: host`, which
-    // yields a bare hostname ("netra-api.onrender.com") with no scheme. Used
-    // as-is that produces a *relative* fetch URL, so every request resolved
-    // against the frontend's own origin and 404'd -- the deployed app could
-    // not reach its API at all. Anything without a scheme gets https, except
-    // localhost, which is served over http in development.
-    if (/^https?:\/\//i.test(base)) return base;
-    const scheme = /^(localhost|127\.0\.0\.1)(:|$)/i.test(base) ? "http" : "https";
-    return `${scheme}://${base}`;
+
+  // No explicit API URL. Two very different situations, and guessing wrong
+  // breaks the app in a way that is hard to read from the browser:
+  //
+  //   - local development: the frontend is on :3000 and the API on :8000, so
+  //     a same-origin call would hit the Next dev server and 404.
+  //   - single-service deployment: FastAPI serves this bundle itself, so the
+  //     API shares the page's origin and a relative path is not only correct
+  //     but avoids CORS and the need to bake a URL in at build time.
+  //
+  // Hostname distinguishes them, and an empty base yields relative URLs.
+  if (!configured) {
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname;
+      const isDevHost = host === "localhost" || host === "127.0.0.1";
+      return isDevHost ? "http://localhost:8000" : "";
+    }
+    return "http://localhost:8000";
   }
-  return "http://localhost:8000";
+
+  const base = configured.replace(/\/+$/, "");
+  // Render's two-service blueprint injects this via `fromService … property:
+  // host`, which yields a bare hostname ("netra-api.onrender.com") with no
+  // scheme. Used as-is that produces a *relative* fetch URL, so every request
+  // resolved against the frontend's own origin and 404'd -- the deployed app
+  // could not reach its API at all. Anything without a scheme gets https,
+  // except localhost, which is served over http in development.
+  if (/^https?:\/\//i.test(base)) return base;
+  const scheme = /^(localhost|127\.0\.0\.1)(:|$)/i.test(base) ? "http" : "https";
+  return `${scheme}://${base}`;
 }
 
 const API_BASE = resolveApiBase();
@@ -114,7 +131,28 @@ export async function apiFetch<T = unknown>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch (err) {
+    // fetch() rejects with a bare "Failed to fetch" for every network-level
+    // failure, and the browser deliberately withholds the reason. On a
+    // deployed build that one message covers three very different
+    // misconfigurations, so it is worth naming them: without the target URL
+    // the person seeing it cannot tell which they have hit.
+    const target = `${API_BASE}${path}`;
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(API_BASE);
+    const hint = isLocal
+      ? "The frontend is pointing at localhost, so NEXT_PUBLIC_API_URL was not set at build time. " +
+        "Next.js inlines that value during `npm run build`, so it must be set before the build, " +
+        "not just at runtime."
+      : "The API did not accept the request. Most often the API's CORS_ORIGINS does not list this " +
+        "site's exact origin, or the API service is asleep or down.";
+    throw new Error(
+      `Cannot reach the NETRA-X API at ${target}. ${hint} ` +
+        `(origin: ${typeof window !== "undefined" ? window.location.origin : "server"})`
+    );
+  }
 
   if (res.status === 401) {
     // Expired or invalid session -- clear it so the app returns to login

@@ -154,17 +154,31 @@ export const TypeOut: React.FC<TypeOutProps> = ({
     };
   }, [lines, speed, lineDelay]);
 
+  // Every line is always rendered; the ones not yet typed are present but
+  // invisible. Rendering only the typed lines made the block grow as it went,
+  // and on the auth screen that pushed the grid row taller line by line, which
+  // slid the vertically-centred login panel down the page while the log ran.
+  // `visibility: hidden` reserves the exact final height with no measurement
+  // and no assumption about the caller's font size or line-height.
   return (
     <div className={className}>
-      {done.map((l, i) => (
-        <div key={i}>{l}</div>
-      ))}
-      {current && (
-        <div>
-          {current}
-          <span className="caret-blink">_</span>
-        </div>
-      )}
+      {lines.map((line, i) => {
+        if (i < done.length) return <div key={i}>{done[i]}</div>;
+        if (i === done.length && current) {
+          return (
+            <div key={i}>
+              {current}
+              <span className="caret-blink">_</span>
+            </div>
+          );
+        }
+        return (
+          <div key={i} aria-hidden="true" style={{ visibility: "hidden" }}>
+            {/* A space keeps blank source lines from collapsing to zero height. */}
+            {line || " "}
+          </div>
+        );
+      })}
     </div>
   );
 };

@@ -10,7 +10,11 @@ import base64
 import hashlib
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from pathlib import Path
+
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Response, Body
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select, or_, func
@@ -156,8 +160,34 @@ def on_startup():
         print(f"[!] Actor-network seed skipped: {e}")
 
 
-@app.get("/")
+# Exported Next.js bundle, when one has been built. Resolved here rather than
+# beside the mount at the bottom because the root route below needs it too.
+_FRONTEND_DIR = Path(__file__).resolve().parents[2] / "apps" / "web" / "out"
+
+
+def _frontend_index() -> Optional[Path]:
+    """Path to the built index.html, or None when no export is present."""
+    index = _FRONTEND_DIR / "index.html"
+    return index if index.is_file() else None
+
+
+@app.get("/", include_in_schema=False)
 def root():
+    """Serve the UI when a frontend build is present, else the API banner.
+
+    In the single-service deployment this route is the site's front door, so
+    it has to return index.html -- it is declared before the catch-all mount
+    at the bottom of this module and would otherwise shadow it, leaving
+    visitors looking at a JSON blob instead of the console.
+
+    With no build output -- local API-only development, and the desktop app,
+    which loads its UI from elsewhere -- the original banner still answers, so
+    nothing that relied on it breaks.
+    """
+    index = _frontend_index()
+    if index is not None:
+        return FileResponse(index)
+
     return {
         "platform": "NETRA-X Intelligence API",
         "status": "healthy",
@@ -1701,3 +1731,61 @@ def trace_financial_cluster_hops(
 
 
 
+
+
+# ---------------------------------------------------------------------------
+# STATIC FRONTEND (single-service deployment)
+# ---------------------------------------------------------------------------
+#
+# Serves the exported Next.js bundle from this same process, so one Render
+# service hosts both the API and the UI.
+#
+# The two-service blueprint splits them, which means the browser calls the API
+# cross-origin and every request depends on CORS_ORIGINS naming the frontend's
+# exact URL, and on NEXT_PUBLIC_API_URL being baked in at build time. Both are
+# easy to get wrong and fail identically -- a bare "Failed to fetch" with the
+# reason withheld by the browser. Served from one origin, neither applies:
+# the frontend calls /api/v1/... as a relative path.
+#
+# Mounted last, on purpose. Every API route above is already registered, so the
+# catch-all below can only ever receive paths that matched nothing else.
+# Registering it earlier would shadow the entire API.
+#
+# Absent build output is not an error: the desktop app and local development
+# both run this API with no export present, and the API must still serve.
+if _FRONTEND_DIR.is_dir():
+    app.mount(
+        "/_next",
+        StaticFiles(directory=_FRONTEND_DIR / "_next"),
+        name="next-assets",
+    )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend(full_path: str):
+        """Serve the exported app, falling back to index.html for app routes.
+
+        A static export writes real files, so a request is answered directly
+        when one exists. Anything else is handed index.html and resolved by the
+        client-side router -- without that, a refresh on any in-app route would
+        404 against the filesystem.
+
+        API paths are excluded explicitly. They cannot reach here unless they
+        matched no route above, and returning the HTML shell for a mistyped
+        endpoint would hand the caller a 200 and a page where it expected JSON.
+        """
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        candidate = (_FRONTEND_DIR / full_path).resolve()
+        # Containment check: `full_path` is attacker-controlled, and without it
+        # a traversal such as ../../.env would be served straight off disk.
+        if (
+            candidate.is_file()
+            and _FRONTEND_DIR.resolve() in candidate.parents
+        ):
+            return FileResponse(candidate)
+
+        index = _FRONTEND_DIR / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        raise HTTPException(status_code=404, detail="Frontend build not found")
