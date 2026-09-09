@@ -16,21 +16,25 @@
 function resolveApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
 
-  // No explicit API URL. Two very different situations, and guessing wrong
-  // breaks the app in a way that is hard to read from the browser:
+  // No explicit API URL.
   //
-  //   - local development: the frontend is on :3000 and the API on :8000, so
-  //     a same-origin call would hit the Next dev server and 404.
-  //   - single-service deployment: FastAPI serves this bundle itself, so the
-  //     API shares the page's origin and a relative path is not only correct
-  //     but avoids CORS and the need to bake a URL in at build time.
+  // NEXT_PUBLIC_* is inlined by Next.js at build time, so a frontend built
+  // without it -- which is what the deployed netrax.onrender.com service does
+  // -- has no value here at runtime and must fall back to something real.
   //
-  // Hostname distinguishes them, and an empty base yields relative URLs.
+  // The deployed API lives at netra-x.onrender.com. This constant was removed
+  // once as "a guess at a service name render.yaml does not define"; it is not
+  // a guess, it is the running backend, and dropping it took the live site
+  // down. render.yaml names the service netra-api, but the deployed instance
+  // predates that file and answers on this host.
   if (!configured) {
     if (typeof window !== "undefined") {
       const host = window.location.hostname;
-      const isDevHost = host === "localhost" || host === "127.0.0.1";
-      return isDevHost ? "http://localhost:8000" : "";
+      if (host === "localhost" || host === "127.0.0.1") {
+        // Development: frontend on :3000, API on :8000.
+        return "http://localhost:8000";
+      }
+      return "https://netra-x.onrender.com";
     }
     return "http://localhost:8000";
   }
