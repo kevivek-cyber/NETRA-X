@@ -1,43 +1,53 @@
+# NETRA-X — single-service Render blueprint.
+#
+# One web service hosts both halves: FastAPI serves the API and also serves the
+# exported Next.js bundle from apps/web/out (see the static mount at the bottom
+# of apps/api/main.py).
+#
+# This replaces an earlier two-service split (netra-api + netra-web). That
+# arrangement put the UI on a different origin from the API, which made every
+# request depend on two settings that are easy to get wrong and fail
+# identically -- a bare "Failed to fetch" with the reason withheld by the
+# browser:
+#
+#   - CORS_ORIGINS had to name the frontend's exact URL, but Render appends a
+#     suffix whenever a service name is taken, so the hardcoded value stopped
+#     matching as soon as "netra-web" was unavailable.
+#   - NEXT_PUBLIC_API_URL is inlined by Next.js at BUILD time, so setting it in
+#     the dashboard after a deploy changed nothing until a rebuild.
+#
+# Served from one origin, neither applies: the frontend calls /api/v1/... as a
+# relative path.
 services:
-  # ----------------------------------------------------------------------------
-  # FastAPI Backend Service (NETRA-X API)
-  # ----------------------------------------------------------------------------
   - type: web
-    name: netra-api
+    name: netrax
     env: python
     region: oregon
     plan: free
-    buildCommand: "pip install --upgrade pip && pip install -e ."
+    # Node is available in Render's Python image, so the frontend export is
+    # built here rather than needing a second service.
+    # NETRA_DESKTOP_BUILD=1 switches next.config.js to `output: 'export'`,
+    # producing the static apps/web/out that FastAPI serves.
+    buildCommand: |
+      pip install --upgrade pip && pip install -e . &&
+      cd apps/web && npm ci && NETRA_DESKTOP_BUILD=1 npm run build
     startCommand: "uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHONPATH
         value: "."
-      - key: NETRAX_ALLOW_EPHEMERAL_SECRET
-        value: "1"
+      # Persist this. Without it the API generates a new signing key on every
+      # boot, invalidating all issued tokens -- and free instances restart
+      # often, so users would be logged out repeatedly.
+      - key: SECRET_KEY
+        generateValue: true
       - key: DATABASE_URL
         fromDatabase:
           name: netra-db
           property: connectionString
+      # Same-origin, so CORS is not in play for the app itself. Localhost stays
+      # listed so a developer can point a local `npm run dev` at this API.
       - key: CORS_ORIGINS
-        value: "https://netra-web.onrender.com,http://localhost:3000"
-
-  # ----------------------------------------------------------------------------
-  # Next.js 14 Frontend Service (NETRA-X Web Interface)
-  # ----------------------------------------------------------------------------
-  - type: web
-    name: netra-web
-    env: node
-    rootDir: apps/web
-    region: oregon
-    plan: free
-    buildCommand: "npm install && npm run build"
-    startCommand: "npm start"
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: netra-api
-          property: host
+        value: "http://localhost:3000,http://127.0.0.1:3000"
 
 databases:
   # ----------------------------------------------------------------------------
