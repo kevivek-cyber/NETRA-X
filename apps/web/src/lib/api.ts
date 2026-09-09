@@ -114,7 +114,28 @@ export async function apiFetch<T = unknown>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch (err) {
+    // fetch() rejects with a bare "Failed to fetch" for every network-level
+    // failure, and the browser deliberately withholds the reason. On a
+    // deployed build that one message covers three very different
+    // misconfigurations, so it is worth naming them: without the target URL
+    // the person seeing it cannot tell which they have hit.
+    const target = `${API_BASE}${path}`;
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(API_BASE);
+    const hint = isLocal
+      ? "The frontend is pointing at localhost, so NEXT_PUBLIC_API_URL was not set at build time. " +
+        "Next.js inlines that value during `npm run build`, so it must be set before the build, " +
+        "not just at runtime."
+      : "The API did not accept the request. Most often the API's CORS_ORIGINS does not list this " +
+        "site's exact origin, or the API service is asleep or down.";
+    throw new Error(
+      `Cannot reach the NETRA-X API at ${target}. ${hint} ` +
+        `(origin: ${typeof window !== "undefined" ? window.location.origin : "server"})`
+    );
+  }
 
   if (res.status === 401) {
     // Expired or invalid session -- clear it so the app returns to login
