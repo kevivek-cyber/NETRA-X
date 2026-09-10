@@ -37,7 +37,8 @@
   Branch to track. Default "main".
 
 .PARAMETER IntervalSeconds
-  How often to check GitHub. Default 60.
+  How often to check GitHub. Default 10 -- a git fetch against one repo is
+  cheap, so polling fast costs little and gets a push live sooner.
 
 .PARAMETER NoTunnel
   Serve on the LAN only; do not open a public tunnel.
@@ -72,7 +73,7 @@ param(
     [int]$Port = 8000,
     [string]$Remote = "origin",
     [string]$Branch = "main",
-    [int]$IntervalSeconds = 60,
+    [int]$IntervalSeconds = 10,
     [switch]$NoTunnel,
     [switch]$NoInstallerBuild,
     [switch]$SkipInitialBuild,
