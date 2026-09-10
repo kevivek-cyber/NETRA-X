@@ -205,7 +205,7 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "platform": "NETRA-X MVP v0.1 [PUSH-TEST-2]", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "platform": "NETRA-X MVP v0.1", "timestamp": datetime.utcnow().isoformat()}
 
 
 @app.get("/metrics")
