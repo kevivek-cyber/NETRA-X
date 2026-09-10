@@ -6,8 +6,10 @@
        pip-installs NETRA-X's backend dependencies into it -- this avoids
        PyInstaller-freezing the scientific stack (spaCy/scikit-learn/numpy/
        faststylometry), which is fragile and slow to iterate on.
-    3. Copies the backend source tree (apps/api, packages, seed) into
+    3. Copies the backend source tree (apps, packages, workers, seed) into
        src-tauri/resources/app, which desktop_main.py runs from at runtime.
+    4. Smoke-checks that the copied tree actually imports under the embedded
+       runtime, so a broken bundle fails the build instead of shipping.
 
   Run via `npm run tauri build` (wired as `beforeBuildCommand` in
   src-tauri/tauri.conf.json) or directly: `powershell -File scripts/build-desktop.ps1`.
@@ -91,7 +93,11 @@ if (Test-Path $AppDir) {
     Remove-Item -Recurse -Force $AppDir
 }
 New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
-foreach ($dir in @("apps", "packages", "seed")) {
+# "workers" belongs here: apps/api/main.py imports workers.collection at
+# module load, so omitting it made the packaged backend die instantly with
+# ModuleNotFoundError on every machine. The failure was invisible -- the
+# shell only checked that *something* answered on port 8000.
+foreach ($dir in @("apps", "packages", "workers", "seed")) {
     Copy-Item -Recurse -Force -Path (Join-Path $RepoRoot $dir) -Destination (Join-Path $AppDir $dir) `
         -Exclude "__pycache__"
 }
@@ -103,5 +109,22 @@ Get-ChildItem -Path $AppDir -Recurse -Directory -Filter "node_modules" |
 # apps/web isn't needed inside the backend resource bundle -- the static
 # export is served by the webview directly via distDir, not by this copy.
 Remove-Item -Recurse -Force (Join-Path $AppDir "apps\web") -ErrorAction SilentlyContinue
+
+# --- Smoke check ----------------------------------------------------------
+# Import the API with the embedded runtime against the copied tree, exactly as
+# the installed app does. A missing dependency or source directory fails the
+# build here, loudly, instead of shipping an installer whose backend cannot
+# start -- which is what happened when "workers" was left out of the copy list.
+Write-Host "==> [4/4] Verifying the bundled backend can start"
+$pyExe = Join-Path $PyEmbedDir "python.exe"
+Push-Location $AppDir
+try {
+    & $pyExe -c "import apps.api.main; print('    OK: apps.api.main imported')"
+    if ($LASTEXITCODE -ne 0) {
+        throw "The bundled backend failed to import. The installer would be broken; aborting."
+    }
+} finally {
+    Pop-Location
+}
 
 Write-Host "==> Desktop build inputs ready."
