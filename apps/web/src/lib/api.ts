@@ -29,14 +29,31 @@ function resolveApiBase(): string {
   // predates that file and answers on this host.
   if (!configured) {
     if (typeof window !== "undefined") {
-      const host = window.location.hostname;
-      if (host === "localhost" || host === "127.0.0.1") {
-        // Development: frontend on :3000, API on :8000.
+      const { hostname, port, origin } = window.location;
+
+      // `next dev` serves the UI on :3000 while the API runs separately on
+      // :8000. Only this exact case needs a different port.
+      if ((hostname === "localhost" || hostname === "127.0.0.1") && port === "3000") {
         return "http://localhost:8000";
       }
-      return "https://netra-x.onrender.com";
+
+      // Render runs the two-service blueprint, where the web service and the
+      // API are genuinely different origins, so same-origin would 404. This
+      // host is the running backend; removing it once took the live site down.
+      if (hostname.endsWith(".onrender.com")) {
+        return "https://netra-x.onrender.com";
+      }
+
+      // Otherwise the API is serving this very page -- see the static mount in
+      // apps/api/main.py -- so it is same-origin.
+      //
+      // This is what makes the shared LAN server work. Any absolute address
+      // here, baked in at build time or guessed at runtime, sends each
+      // teammate's browser to its own machine instead of to the server they
+      // loaded the page from. A localhost default fails that way silently.
+      return origin;
     }
-    return "http://localhost:8000";
+    return "";
   }
 
   const base = configured.replace(/\/+$/, "");
@@ -146,7 +163,18 @@ export async function apiFetch<T = unknown>(
     // the person seeing it cannot tell which they have hit.
     const target = `${API_BASE}${path}`;
     const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(API_BASE);
-    const hint = isLocal
+    // Inside the packaged desktop shell the webview origin is tauri.localhost
+    // (Windows/WebView2) or the tauri:// scheme (macOS/Linux). There, a
+    // localhost API target is CORRECT, not a missing-env symptom -- blaming
+    // NEXT_PUBLIC_API_URL here sends people to rebuild the frontend over what
+    // is really a dead sidecar, a taken port, or a rejected origin.
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const isDesktop = /^(https?:\/\/tauri\.localhost|tauri:\/\/)/i.test(origin);
+    const hint = isDesktop
+      ? "This is the desktop app, where a 127.0.0.1 API address is expected. The local backend " +
+        "did not answer: it may have failed to start, another program may already be using " +
+        "port 8000, or the API may have rejected this window's origin via CORS."
+      : isLocal
       ? "The frontend is pointing at localhost, so NEXT_PUBLIC_API_URL was not set at build time. " +
         "Next.js inlines that value during `npm run build`, so it must be set before the build, " +
         "not just at runtime."
