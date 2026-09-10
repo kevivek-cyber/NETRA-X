@@ -1,14 +1,14 @@
 {
   "build": {
-    "beforeDevCommand": "npm run dev --prefix apps/web",
-    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1",
-    "devPath": "http://localhost:3000",
-    "distDir": "../apps/web/out",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "../src-tauri/setup",
+    "distDir": "../src-tauri/setup",
     "withGlobalTauri": true
   },
   "package": {
     "productName": "NETRA-X",
-    "version": "0.1.0"
+    "version": "0.2.2"
   },
   "tauri": {
     "allowlist": {
@@ -28,11 +28,10 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "resources": [
-        "resources/pyembed/**/*",
-        "resources/app/**/*"
+      "targets": [
+        "nsis",
+        "msi"
       ],
-      "targets": ["nsis", "msi"],
       "windows": {
         "webviewInstallMode": {
           "type": "downloadBootstrapper"
@@ -42,17 +41,6 @@
     "security": {
       "csp": null
     },
-    "windows": [
-      {
-        "title": "NETRA-X — Threat Actor Intelligence & Attribution",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 1024,
-        "minHeight": 700,
-        "resizable": true,
-        "fullscreen": false,
-        "maximized": true
-      }
-    ]
+    "windows": []
   }
 }

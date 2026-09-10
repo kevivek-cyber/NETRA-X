@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>NETRA-X — Connect</title>
+<style>
+  :root {
+    --bg: #05070d; --panel: #0b1020; --line: #1b2540;
+    --text: #dbe4ff; --dim: #7c8bb5; --accent: #22d3ee; --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #10203a 0%, var(--bg) 60%);
+    color: var(--text); display: grid; place-items: center;
+    font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+  .card { width: min(460px, 92vw); }
+  .brand { letter-spacing: .38em; font-size: 12px; color: var(--accent); margin-bottom: 10px; }
+  h1 { font-size: 21px; margin: 0 0 6px; font-weight: 600; }
+  p.sub { color: var(--dim); margin: 0 0 22px; }
+  label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 7px; }
+  input {
+    width: 100%; padding: 12px 14px; border-radius: 8px; color: var(--text);
+    background: var(--panel); border: 1px solid var(--line);
+    font: inherit; font-family: ui-monospace, Consolas, monospace;
+    -webkit-user-select: text; user-select: text;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    width: 100%; margin-top: 16px; padding: 12px; border: 0; border-radius: 8px;
+    background: var(--accent); color: #04121a; font: inherit; font-weight: 700;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  .msg { margin-top: 14px; font-size: 13px; min-height: 20px; }
+  .msg.err { color: var(--danger); }
+  .msg.ok  { color: var(--accent); }
+  .hint { margin-top: 20px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 14px; }
+  code { color: var(--text); font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">NETRA-X</div>
+    <h1>Connect to your team server</h1>
+    <p class="sub">This app shows data from one shared server. Enter its address.</p>
+
+    <label for="addr">Server address</label>
+    <input id="addr" placeholder="192.168.1.10:8000" autocomplete="off" spellcheck="false" />
+
+    <button id="go">Connect</button>
+    <div id="msg" class="msg"></div>
+
+    <div class="hint">
+      Ask whoever runs the server &mdash; it prints the address on startup,
+      something like <code>http://192.168.8.113:8000</code>. You must be on the
+      same Wi&#8209;Fi.
+    </div>
+  </div>
+
+<script>
+  const invoke = window.__TAURI__.invoke;
+  const addr = document.getElementById("addr");
+  const go   = document.getElementById("go");
+  const msg  = document.getElementById("msg");
+
+  // Prefill: a rejected address is far easier to correct than to retype.
+  invoke("saved_server").then(v => { if (v) addr.value = v; }).catch(() => {});
+  const startupError = new URLSearchParams(location.search).get("error");
+  if (startupError) { msg.className = "msg err"; msg.textContent = startupError; }
+
+  async function connect() {
+    const value = addr.value.trim();
+    if (!value) { msg.className = "msg err"; msg.textContent = "Enter the server address."; return; }
+    go.disabled = true;
+    msg.className = "msg";
+    msg.textContent = "Checking " + value + " ...";
+    try {
+      await invoke("connect_to_server", { url: value });
+      msg.className = "msg ok";
+      msg.textContent = "Connected. Opening NETRA-X...";
+    } catch (e) {
+      msg.className = "msg err";
+      msg.textContent = String(e);
+      go.disabled = false;
+    }
+  }
+
+  go.addEventListener("click", connect);
+  addr.addEventListener("keydown", e => { if (e.key === "Enter") connect(); });
+  addr.focus();
+</script>
+</body>
+</html>
