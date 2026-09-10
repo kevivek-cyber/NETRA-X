@@ -5,8 +5,12 @@ import { Lock, ShieldCheck, Hash, AlertTriangle } from "lucide-react";
 import { ModuleHeader } from "./ModuleHeader";
 import { apiFetch } from "../lib/api";
 import { SkeletonTable } from "./viz/Skeleton";
+import { useLive } from "../lib/live";
 
 export const AuditLogViewer: React.FC = () => {
+  // Refetch when a teammate changes data on the shared server.
+  const { revision } = useLive();
+
   const [auditData, setAuditData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,7 +26,7 @@ export const AuditLogViewer: React.FC = () => {
       }
     }
     loadAudit();
-  }, []);
+  }, [revision]);
 
   return (
     <div className="space-y-6">

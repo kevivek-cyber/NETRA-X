@@ -6,9 +6,13 @@ import { ModuleHeader } from "./ModuleHeader";
 import { useToast } from "./StatusToasts";
 import { apiFetch } from "../lib/api";
 import { SkeletonPanel } from "./viz/Skeleton";
+import { useLive } from "../lib/live";
 
 export const CasesView: React.FC = () => {
   const toast = useToast();
+  // Refetch when a teammate changes data on the shared server.
+  const { revision } = useLive();
+
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -36,7 +40,7 @@ export const CasesView: React.FC = () => {
 
   useEffect(() => {
     loadCases();
-  }, []);
+  }, [revision]);
 
   const handleCreateCase = async () => {
     if (!title.trim()) return;

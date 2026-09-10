@@ -36,6 +36,7 @@ import { ThreatGlobe } from "./viz/ThreatGlobe";
 import { Sparkline } from "./viz/Sparkline";
 import { ScrambleText } from "./viz/TextFX";
 import { ActivityFeed } from "./viz/ActivityFeed";
+import { useLive } from "../lib/live";
 
 interface CommandCenterProps {
   onNavigate: (view: string, targetId?: string) => void;
@@ -85,6 +86,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   onOpenReportModal,
   onOpenIngestionModal,
 }) => {
+  // Refetch when a teammate changes data on the shared server.
+  const { revision } = useLive();
+
   const [actors, setActors] = useState<any[]>([]);
   const [hypotheses, setHypotheses] = useState<any[]>([]);
   const [evidence, setEvidence] = useState<any[]>([]);
@@ -127,7 +131,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [revision]);
 
   const handleInvestigate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();

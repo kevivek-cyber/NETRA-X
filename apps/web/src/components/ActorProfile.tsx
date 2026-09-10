@@ -9,6 +9,7 @@ import { useToast } from "./StatusToasts";
 import { apiFetch } from "../lib/api";
 import { CryptoUTXOVisualizer } from "./CryptoUTXOVisualizer";
 import { SkeletonPanel, SkeletonTiles } from "./viz/Skeleton";
+import { useLive } from "../lib/live";
 
 interface ActorProfileProps {
   actorId?: string;
@@ -24,6 +25,9 @@ export const ActorProfile: React.FC<ActorProfileProps> = ({
   onOpenReportModal,
 }) => {
   const toast = useToast();
+  // Refetch when a teammate changes data on the shared server.
+  const { revision } = useLive();
+
   const [actor, setActor] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<string>("identity");
@@ -47,7 +51,7 @@ export const ActorProfile: React.FC<ActorProfileProps> = ({
       }
     }
     loadActor();
-  }, [actorId]);
+  }, [actorId, revision]);
 
   if (loading || !actor) {
     return (

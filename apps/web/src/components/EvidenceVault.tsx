@@ -5,12 +5,16 @@ import { FileText, Hash, ExternalLink, Filter, Trash2, Globe, Plus } from "lucid
 import { ModuleHeader } from "./ModuleHeader";
 import { apiFetch } from "../lib/api";
 import { SkeletonTable } from "./viz/Skeleton";
+import { useLive } from "../lib/live";
 
 interface EvidenceVaultProps {
   onOpenIngestionModal?: () => void;
 }
 
 export const EvidenceVault: React.FC<EvidenceVaultProps> = ({ onOpenIngestionModal }) => {
+  // Refetch when a teammate changes data on the shared server.
+  const { revision } = useLive();
+
   const [evidenceList, setEvidenceList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,7 +31,7 @@ export const EvidenceVault: React.FC<EvidenceVaultProps> = ({ onOpenIngestionMod
 
   useEffect(() => {
     loadEvidence();
-  }, []);
+  }, [revision]);
 
   const [error, setError] = useState<string | null>(null);
 

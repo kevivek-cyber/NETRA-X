@@ -9,6 +9,7 @@ import { useToast } from "./StatusToasts";
 import { apiFetch, downloadReportPdf } from "../lib/api";
 import { EvidenceWaterfall } from "./EvidenceWaterfall";
 import { SkeletonPanel, SkeletonTiles } from "./viz/Skeleton";
+import { useLive } from "../lib/live";
 
 interface AttributionLabProps {
   hypothesisId?: string;
@@ -20,6 +21,9 @@ export const AttributionLab: React.FC<AttributionLabProps> = ({
   onNavigate
 }) => {
   const toast = useToast();
+  // Refetch when a teammate changes data on the shared server.
+  const { revision } = useLive();
+
   const [hypothesis, setHypothesis] = useState<any>(null);
   const [engineConfig, setEngineConfig] = useState<any>(null);
   const [notes, setNotes] = useState("");
@@ -47,7 +51,7 @@ export const AttributionLab: React.FC<AttributionLabProps> = ({
     }
     loadHypothesis();
     loadEngineConfig();
-  }, [hypothesisId]);
+  }, [hypothesisId, revision]);
 
   if (!hypothesis) {
     return (

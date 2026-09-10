@@ -8,6 +8,7 @@ import {
 import cytoscape from "cytoscape";
 import { apiFetch } from "../lib/api";
 import { useToast } from "./StatusToasts";
+import { useLive } from "../lib/live";
 
 interface GraphExplorerProps {
   actorId?: string;
@@ -66,6 +67,9 @@ export const GraphExplorer: React.FC<GraphExplorerProps> = ({ actorId, onNavigat
   const cyRef = useRef<cytoscape.Core | null>(null);
   const reqRef = useRef(0);
 
+  // Refetch when a teammate changes data on the shared server.
+  const { revision } = useLive();
+
   const [selectedNode, setSelectedNode] = useState<InspectedNode | null>(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ nodes: 0, edges: 0 });
@@ -102,7 +106,7 @@ export const GraphExplorer: React.FC<GraphExplorerProps> = ({ actorId, onNavigat
       degree: node.degree(false),
       links,
     };
-  }, []);
+  }, [revision]);
 
   useEffect(() => {
     let disposed = false;

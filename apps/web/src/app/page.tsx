@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { apiFetch, getAuthToken, setAuthToken } from "../lib/api";
+import { LiveProvider } from "../lib/live";
 import { LoginScreen } from "../components/LoginScreen";
 import { AppShell } from "../components/AppShell";
 import { BootSequence } from "../components/BootSequence";
@@ -116,6 +117,9 @@ export default function Home() {
 
   return (
     <ToastProvider>
+      {/* Inside ToastProvider so teammate activity can announce itself, and
+          outside the views so one poller serves all of them. */}
+      <LiveProvider userEmail={user.email}>
       <CommandPalette
         onNavigate={handleNavigate}
         onOpenCopilot={() => setIsCopilotOpen(true)}
@@ -177,6 +181,7 @@ export default function Home() {
           onNavigate={handleNavigate}
         />
       </AppShell>
+      </LiveProvider>
     </ToastProvider>
   );
 }
