@@ -61,7 +61,7 @@ const DEFAULT_PORT: u16 = 8000;
 /// An empty value simply means "always ask", which is the old behaviour.
 const DEFAULT_SERVER_URL: &str = match option_env!("NETRAX_DEFAULT_SERVER") {
     Some(url) => url,
-    None => "https://liable-scanner-disable-closely.trycloudflare.com",
+    None => "https://netra.cleanifyweb.in",
 };
 
 /// Which server to try at startup, and whether it came from the user.
