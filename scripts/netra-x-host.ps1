@@ -320,16 +320,27 @@ function Start-Tunnel {
 # ---------------------------------------------------------------------------
 
 function Get-RemoteChanges {
-    # Returns the list of changed paths, or $null when there is nothing new.
-    # Offline or unreachable remote is not fatal: the server keeps serving and
-    # the next poll tries again.
+    # Returns the list of changed paths, or $null when there is nothing to
+    # pull. Offline or unreachable remote is not fatal: the server keeps
+    # serving and the next poll tries again.
+    #
+    # Checking "HEAD != origin/main" is not the same question as "does
+    # origin/main have anything new" -- a checkout with local commits not
+    # yet pushed is also unequal to origin, but a --ff-only merge there is a
+    # harmless no-op that never advances HEAD, so treating "unequal" as
+    # "needs a restart" made every single launch report new changes and
+    # restart the server, forever, even with nothing genuinely new to pull.
+    # rev-list HEAD..origin/main counts commits origin has that HEAD
+    # lacks -- zero means we are already caught up (equal, or ahead).
     Invoke-Git fetch --quiet $Remote $Branch | Out-Null
 
-    $local = (Invoke-Git rev-parse HEAD) -join ""
     $upstream = (Invoke-Git rev-parse "$Remote/$Branch") -join ""
-    if (-not $upstream -or $local -eq $upstream) { return $null }
+    if (-not $upstream) { return $null }
 
-    return @(Invoke-Git diff --name-only HEAD "$Remote/$Branch")
+    $behindCount = (Invoke-Git rev-list "HEAD..$Remote/$Branch" --count) -join ""
+    if (-not $behindCount -or $behindCount -eq "0") { return $null }
+
+    return @(Invoke-Git diff --name-only "HEAD...$Remote/$Branch")
 }
 
 function Invoke-Deploy([string[]]$changedPaths, [string]$source) {
@@ -399,7 +410,16 @@ if (-not $SkipInitialBuild) {
 } else {
     Write-Host "[web] reusing the existing UI export" -ForegroundColor DarkGray
 }
-Start-Server
+# Only bounce the server when it actually needs to change: new code just
+# pulled, or nothing is currently answering on this port. Restarting on
+# every launch regardless -- even with no code change and a perfectly
+# healthy server already up -- drops every teammate's connection for no
+# reason and makes "just relaunch the wrapper script" needlessly risky.
+if ($startupChanges -or -not (Test-ServerHealthy)) {
+    Start-Server
+} else {
+    Write-Host "[api] already running and healthy on port $Port -- leaving it as is" -ForegroundColor DarkGray
+}
 Start-Tunnel
 
 $lanUrl = "http://$((Get-NetIPAddress -AddressFamily IPv4 |
