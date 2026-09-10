@@ -79,7 +79,13 @@ CORS_ORIGINS = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_origin_regex=r"https://.*\.onrender\.(com|app)",
+    # The packaged desktop shell calls this API cross-origin from its
+    # webview, whose origin is platform-dependent: macOS/Linux use the
+    # custom scheme tauri://localhost, while Windows/WebView2 serves the
+    # app from https://tauri.localhost. Matching all of them here (rather
+    # than only in desktop_main.py's CORS_ORIGINS default) keeps the
+    # desktop build working no matter how the backend was started.
+    allow_origin_regex=r"https://.*\.onrender\.(com|app)|https?://tauri\.localhost|tauri://localhost",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
@@ -1367,6 +1373,69 @@ def export_csv(hypothesis_id: Optional[str] = None, db: Session = Depends(get_db
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=NETRA-X_Evidence_{hypothesis_id[:8]}.csv"}
     )
+
+
+# --- LIVE CHANGE FEED ---
+#
+# Several analysts share one server, so any view goes stale as soon as someone
+# else edits. Clients poll this for a cursor and refetch only when it moves.
+#
+# The feed is the audit log rather than a separate publish/subscribe channel.
+# Every mutating endpoint already appends an audit entry -- mandatory for
+# provenance, not optional -- and `seq` is monotonic and unique, so the feed
+# cannot miss a change. A hand-placed publish call in each endpoint could be
+# forgotten, and that change would then silently never reach anyone.
+@app.get("/api/v1/changes")
+def get_changes(
+    since: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Audit entries after `since`, plus the current head cursor.
+
+    `cursor` is the true head even when the returned rows are truncated, so a
+    client that has been away resynchronises in one step instead of paging
+    forward through history it does not need -- it refetches its views and
+    resumes from the head.
+    """
+    limit = max(1, min(limit, 200))
+
+    head = db.query(func.max(AuditLog.seq)).scalar()
+    head = int(head) if head is not None else 0
+
+    rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.seq > since)
+        .order_by(AuditLog.seq.asc())
+        .limit(limit)
+        .all()
+    )
+
+    # Resolve actor ids to emails in one query rather than per row: the UI says
+    # "Sahil archived a case", and an opaque uuid would not carry that.
+    actor_ids = {r.actor_user_id for r in rows if r.actor_user_id}
+    emails = {}
+    if actor_ids:
+        emails = {
+            u.id: u.email
+            for u in db.query(User).filter(User.id.in_(actor_ids)).all()
+        }
+
+    return {
+        "cursor": head,
+        "changes": [
+            {
+                "seq": r.seq,
+                "action": r.action,
+                "resource_type": r.resource_type,
+                "resource_id": r.resource_id,
+                "actor": emails.get(r.actor_user_id, r.actor_user_id),
+                "at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
 
 
 # --- AUDIT LOG ENDPOINT ---
