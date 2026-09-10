@@ -51,7 +51,7 @@
 .PARAMETER PublicHostname
   The DNS name routed to TunnelName (see `cloudflared tunnel route dns`).
   Only used to print the address; the tunnel itself does not need to be told
-  its own hostname. Default "netra.cleanifyweb.in".
+  its own hostname. Default "www.onnetra.in".
 
 .PARAMETER SkipInitialBuild
   Start from the existing apps/web/out instead of rebuilding first. Restarting
@@ -77,7 +77,7 @@ param(
     [switch]$NoInstallerBuild,
     [switch]$SkipInitialBuild,
     [string]$TunnelName = "netra-x",
-    [string]$PublicHostname = "netra.cleanifyweb.in"
+    [string]$PublicHostname = "www.onnetra.in"
 )
 
 $ErrorActionPreference = "Stop"
