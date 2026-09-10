@@ -73,3 +73,9 @@ src-tauri/resources/
 *.log
 tok.txt
 netrax.db.bak
+
+# Downloaded third-party tooling (cloudflared etc) -- fetched, not source
+tools/
+
+# Personal Claude Code settings
+.claude/settings.local.json
