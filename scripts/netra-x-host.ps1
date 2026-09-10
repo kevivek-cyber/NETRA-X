@@ -374,6 +374,24 @@ function Get-LocalStamp {
 # ---------------------------------------------------------------------------
 
 Write-Section "NETRA-X host starting"
+
+# Sync to the latest commit on $Remote/$Branch BEFORE building or serving
+# anything. Without this, a launch after the folder had already fallen
+# behind served stale code for up to $IntervalSeconds until the first poll
+# caught up -- confusing right after you know you just pushed something.
+$startupChanges = Get-RemoteChanges
+if ($startupChanges) {
+    Write-Host "[git] $Remote/$Branch has $($startupChanges.Count) file(s) not yet in this checkout -- syncing first" -ForegroundColor Yellow
+    try {
+        Invoke-Git merge --ff-only "$Remote/$Branch" | Out-Null
+        Write-Host "[git] now at $(& git rev-parse --short HEAD)" -ForegroundColor Green
+    } catch {
+        Write-Warning "[git] could not fast-forward to $Remote/$Branch -- local commits have diverged. Starting from the current checkout as-is."
+    }
+} else {
+    Write-Host "[git] already at $Remote/$Branch's latest ($(& git rev-parse --short HEAD))" -ForegroundColor DarkGray
+}
+
 Restore-Downloads
 if (-not $SkipInitialBuild) {
     Build-Web | Out-Null
