@@ -42,6 +42,17 @@
 .PARAMETER NoTunnel
   Serve on the LAN only; do not open a public tunnel.
 
+.PARAMETER TunnelName
+  Named Cloudflare tunnel to run (see `cloudflared tunnel create`). Falls back
+  to an unnamed quick tunnel -- a random address that changes every restart --
+  when this tunnel is not set up on the current machine (no credentials file
+  in ~/.cloudflared). Default "netra-x".
+
+.PARAMETER PublicHostname
+  The DNS name routed to TunnelName (see `cloudflared tunnel route dns`).
+  Only used to print the address; the tunnel itself does not need to be told
+  its own hostname. Default "netra.cleanifyweb.in".
+
 .PARAMETER SkipInitialBuild
   Start from the existing apps/web/out instead of rebuilding first. Restarting
   the host does not need a rebuild if nothing changed, and rebuilding deletes
@@ -64,7 +75,9 @@ param(
     [int]$IntervalSeconds = 60,
     [switch]$NoTunnel,
     [switch]$NoInstallerBuild,
-    [switch]$SkipInitialBuild
+    [switch]$SkipInitialBuild,
+    [string]$TunnelName = "netra-x",
+    [string]$PublicHostname = "netra.cleanifyweb.in"
 )
 
 $ErrorActionPreference = "Stop"
@@ -234,6 +247,18 @@ function Start-Server {
         -PassThru -NoNewWindow
 }
 
+function Test-NamedTunnelReady {
+    # `cloudflared tunnel create` writes one <tunnel-id>.json credentials file
+    # per tunnel into ~/.cloudflared alongside cert.pem from the login step.
+    # Its absence means either step was never done on this machine, and the
+    # named tunnel command would fail outright rather than degrade -- so fall
+    # back to a quick tunnel instead of erroring the whole host out.
+    $cfHome = Join-Path $env:USERPROFILE ".cloudflared"
+    if (-not (Test-Path (Join-Path $cfHome "cert.pem"))) { return $false }
+    $list = & $Cloudflared tunnel list 2>$null
+    return [bool]($list | Select-String -SimpleMatch $TunnelName)
+}
+
 function Start-Tunnel {
     if ($NoTunnel) { return }
     if (-not (Test-Path $Cloudflared)) {
@@ -245,6 +270,31 @@ function Start-Tunnel {
 
     Stop-Tree $script:TunnelProcess
     Remove-Item $TunnelLog -ErrorAction SilentlyContinue
+
+    if ($TunnelName -and (Test-NamedTunnelReady)) {
+        # A named tunnel has a fixed hostname (set up once via `tunnel create`
+        # + `tunnel route dns`), so restarting this host, or the machine, never
+        # changes the address teammates use -- unlike a quick tunnel, which
+        # hands out a fresh random one on every launch.
+        Write-Host "[tunnel] starting named tunnel '$TunnelName'" -ForegroundColor Cyan
+        $script:TunnelProcess = Start-Process -FilePath $Cloudflared `
+            -ArgumentList @("tunnel", "--url", "http://127.0.0.1:$Port", "run", $TunnelName) `
+            -PassThru -NoNewWindow -RedirectStandardError $TunnelLog
+
+        Write-Host "[tunnel] waiting for connection..." -ForegroundColor Cyan
+        $deadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 2
+            if ((Test-Path $TunnelLog) -and (Select-String -Path $TunnelLog -Pattern "Registered tunnel connection" -Quiet)) {
+                $script:PublicUrl = "https://$PublicHostname"
+                return
+            }
+        }
+        Write-Warning "[tunnel] named tunnel did not connect within 30s. Falling back to a quick tunnel."
+        Stop-Tree $script:TunnelProcess
+    }
+
+    Write-Host "[tunnel] starting quick tunnel (address changes on restart)" -ForegroundColor Yellow
     $script:TunnelProcess = Start-Process -FilePath $Cloudflared `
         -ArgumentList @("tunnel", "--url", "http://127.0.0.1:$Port") `
         -PassThru -NoNewWindow -RedirectStandardError $TunnelLog
