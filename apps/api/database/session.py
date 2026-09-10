@@ -5,7 +5,7 @@ Supports PostgreSQL asyncpg / psycopg2 and SQLite fallback for local standalone 
 
 import os
 from typing import AsyncGenerator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -38,9 +38,40 @@ if "postgresql" in DATABASE_URL_SYNC or "postgres" in DATABASE_URL_SYNC:
         DATABASE_URL = "sqlite+aiosqlite:///./netrax.db"
         DATABASE_URL_SYNC = "sqlite:///./netrax.db"
 
+def apply_sqlite_pragmas(engine) -> None:
+    """Make a SQLite engine safe for several people working at once.
+
+    SQLite's default rollback journal locks the whole database for each write
+    and readers block on it, so simultaneous analysts hit intermittent
+    "database is locked" errors. Three pragmas, set per connection because
+    busy_timeout is a connection property and does not persist:
+
+      journal_mode=WAL   readers proceed during a write (persists in the file)
+      busy_timeout       wait for a held lock instead of failing at once
+      synchronous=NORMAL the durability WAL is designed for; FULL fsyncs every
+                         commit, which is needless here and much slower
+
+    Accepts a sync or async engine -- an async engine wraps a sync one, and the
+    connect event lives on the inner engine.
+    """
+    target = getattr(engine, "sync_engine", engine)
+
+    @event.listens_for(target, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=10000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cursor.close()
+
+
 if "sqlite" in DATABASE_URL_SYNC:
     async_engine = create_async_engine(DATABASE_URL, echo=False)
     sync_engine = create_engine(DATABASE_URL_SYNC, echo=False, connect_args={"check_same_thread": False})
+    apply_sqlite_pragmas(async_engine)
+    apply_sqlite_pragmas(sync_engine)
 else:
     async_engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
     sync_engine = create_engine(DATABASE_URL_SYNC, echo=False, pool_pre_ping=True)
